@@ -129,7 +129,7 @@
 		07F966CC18C5BA1200B394AF /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
-				LastUpgradeCheck = 0710;
+				LastUpgradeCheck = 0800;
 				ORGANIZATIONNAME = "Cryptic Apps";
 			};
 			buildConfigurationList = 07F966CF18C5BA1200B394AF /* Build configuration list for PBXProject "PPCCPU" */;
@@ -284,7 +284,7 @@
 					"$(SRCROOT)/PPCCPU",
 				);
 				INFOPLIST_FILE = "PPCCPU/PPCCPU-Info.plist";
-				INSTALL_PATH = "$(USER_LIBRARY_DIR)/Application Support/Hopper/PlugIns/CPUs";
+				INSTALL_PATH = "$(USER_LIBRARY_DIR)/Application Support/Hopper/PlugIns/v4/CPUs";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				WRAPPER_EXTENSION = hopperCPU;
 			};
@@ -304,7 +304,7 @@
 					"$(SRCROOT)/PPCCPU",
 				);
 				INFOPLIST_FILE = "PPCCPU/PPCCPU-Info.plist";
-				INSTALL_PATH = "$(USER_LIBRARY_DIR)/Application Support/Hopper/PlugIns/CPUs";
+				INSTALL_PATH = "$(USER_LIBRARY_DIR)/Application Support/Hopper/PlugIns/v4/CPUs";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				WRAPPER_EXTENSION = hopperCPU;
 			};

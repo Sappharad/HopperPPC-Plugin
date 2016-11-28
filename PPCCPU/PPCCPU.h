@@ -11,9 +11,18 @@
 
 typedef NS_ENUM(NSUInteger, PPCRegClass) {
     RegClass_AddressRegister = RegClass_FirstUserClass,
+    RegClass_FPRegister,
     RegClass_PPC_Cnt
 };
 
+typedef NS_ENUM(NSUInteger, PPCIncrement) {
+    INCR_NoIncrement,
+    INCR_Postincrement,
+    INCR_Predecrement
+};
+
 @interface PPCCPU : NSObject<CPUDefinition>
+
+- (NSObject<HPHopperServices> *)hopperServices;
 
 @end

@@ -20,6 +20,10 @@
     return self;
 }
 
+- (NSObject<HPHopperServices> *)hopperServices {
+    return _services;
+}
+
 - (NSObject<CPUContext> *)buildCPUContextForFile:(NSObject<HPDisassembledFile> *)file {
     return [[PPCCtx alloc] initWithCPU:self andFile:file];
 }
@@ -105,24 +109,24 @@
     return 0;
 }
 
-- (BOOL)registerIndexIsStackPointer:(uint32_t)reg ofClass:(RegClass)reg_class {
+- (BOOL)registerIndexIsStackPointer:(NSUInteger)reg ofClass:(RegClass)reg_class {
     return reg_class == RegClass_AddressRegister && reg == 1;
 }
 
-- (BOOL)registerIndexIsFrameBasePointer:(uint32_t)reg ofClass:(RegClass)reg_class {
+- (BOOL)registerIndexIsFrameBasePointer:(NSUInteger)reg ofClass:(RegClass)reg_class {
     return NO;
 }
 
-- (BOOL)registerIndexIsProgramCounter:(uint32_t)reg {
+- (BOOL)registerIndexIsProgramCounter:(NSUInteger)reg {
     return NO;
 }
 
-- (NSString *)registerIndexToString:(int)reg ofClass:(RegClass)reg_class withBitSize:(int)size andPosition:(DisasmPosition)position {
+- (NSString *)registerIndexToString:(NSUInteger)reg ofClass:(RegClass)reg_class withBitSize:(NSUInteger)size andPosition:(DisasmPosition)position {
     switch (reg_class) {
         case RegClass_CPUState: return @"CCR";
-        case RegClass_PseudoRegisterSTACK: return [NSString stringWithFormat:@"STK%d", reg];
-        case RegClass_GeneralPurposeRegister: return [NSString stringWithFormat:@"d%d", reg];
-        case RegClass_AddressRegister: return [NSString stringWithFormat:@"a%d", reg];
+        case RegClass_PseudoRegisterSTACK: return [NSString stringWithFormat:@"STK%lu", (unsigned long)reg];
+        case RegClass_GeneralPurposeRegister: return [NSString stringWithFormat:@"d%lu", (unsigned long)reg];
+        case RegClass_AddressRegister: return [NSString stringWithFormat:@"a%lu", (unsigned long)reg];
         default: break;
     }
     return nil;
@@ -136,7 +140,7 @@
     return index;
 }
 
-- (NSAttributedString *)colorizeInstructionString:(NSAttributedString *)string {
+/*- (NSAttributedString *)colorizeInstructionString:(NSAttributedString *)string {
     NSMutableAttributedString *colorized = [string mutableCopy];
     [_services colorizeASMString:colorized
                operatorPredicate:^BOOL(unichar c) {
@@ -164,7 +168,7 @@
             return NO;
         }];
     return colorized;
-}
+}*/
 
 - (NSData *)nopWithSize:(NSUInteger)size andMode:(NSUInteger)cpuMode forFile:(NSObject<HPDisassembledFile> *)file {
     // Instruction size is always a multiple of 4

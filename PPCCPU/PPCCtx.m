@@ -78,6 +78,16 @@
     return (word == 0x48e7) || ((word & 0xFFF8) == 0x4e50);*/
 }
 
+- (NSUInteger)detectedPaddingLengthAt:(Address)address {
+    NSUInteger len = 0;
+    while ([_file readUInt16AtVirtualAddress:address] == 0) {
+        address += 2;
+        len += 2;
+    }
+    
+    return len;
+}
+
 - (void)analysisBeginsAt:(Address)entryPoint {
 
 }
@@ -92,6 +102,10 @@
 
 - (void)procedureAnalysisOfPrologForProcedure:(NSObject<HPProcedure> *)procedure atEntryPoint:(Address)entryPoint {
 
+}
+
+- (void)procedureAnalysisOfEpilogForProcedure:(NSObject<HPProcedure> *)procedure atEntryPoint:(Address)entryPoint {
+    
 }
 
 - (void)procedureAnalysisEndedForProcedure:(NSObject<HPProcedure> *)procedure atEntryPoint:(Address)entryPoint {
@@ -134,11 +148,6 @@
     return retval;
 }
 
-/*uint32_t memory_read_callback(uint32_t address, void* private) {
-    PPCCtx *ctx = (__bridge PPCCtx *)private;
-    return [ctx readLongAt:address];
-}*/
-
 - (uint32_t)readLongAt:(uint32_t)address {
     return [_file readUInt32AtVirtualAddress:address];
 }
@@ -165,7 +174,7 @@
     while (*ptr == ' ') ptr++;
     ptr = d.operands;
 
-    int operandIndex = 0;
+    /*int operandIndex = 0;
     char *operand = disasm->operand[operandIndex].mnemonic;
     int p_level = 0;
     while (*ptr) {
@@ -181,7 +190,7 @@
             *operand++ = tolower(*ptr++);
         }
     }
-    *operand = 0;
+    *operand = 0;*/
 
     // In this early version, only branch instructions are analyzed in order to correctly
     // construct basic blocks of procedures.
@@ -283,7 +292,7 @@
     return [NSString stringWithFormat:@"var%lld", displacement];
 }
 
-- (void)buildInstructionString:(DisasmStruct *)disasm forSegment:(NSObject<HPSegment> *)segment populatingInfo:(NSObject<HPFormattedInstructionInfo> *)formattedInstructionInfo {
+/*- (void)buildInstructionString:(DisasmStruct *)disasm forSegment:(NSObject<HPSegment> *)segment populatingInfo:(NSObject<HPFormattedInstructionInfo> *)formattedInstructionInfo {
     const char *spaces = "                ";
     strcpy(disasm->completeInstructionString, disasm->instruction.mnemonic);
     strcat(disasm->completeInstructionString, spaces + strlen(disasm->instruction.mnemonic));
@@ -292,6 +301,46 @@
         if (i) strcat(disasm->completeInstructionString, ", ");
         strcat(disasm->completeInstructionString, disasm->operand[i].mnemonic);
     }
+}*/
+
+- (NSObject<HPASMLine> *)buildMnemonicString:(DisasmStruct *)disasm inFile:(NSObject<HPDisassembledFile> *)file {
+    NSObject<HPHopperServices> *services = _cpu.hopperServices;
+    NSObject<HPASMLine> *line = [services blankASMLine];
+    [line appendMnemonic:@(disasm->instruction.mnemonic)];
+    return line;
+}
+
+- (NSObject<HPASMLine> *)buildOperandString:(DisasmStruct *)disasm forOperandIndex:(NSUInteger)operandIndex inFile:(NSObject<HPDisassembledFile> *)file raw:(BOOL)raw {
+    if (operandIndex >= DISASM_MAX_OPERANDS) return nil;
+    DisasmOperand *operand = disasm->operand + operandIndex;
+    if (operand->type == DISASM_OPERAND_NO_OPERAND) return nil;
+   
+    NSObject<HPHopperServices> *services = _cpu.hopperServices;
+    NSObject<HPASMLine> *line = [services blankASMLine];
+    
+    if (operand->type & DISASM_OPERAND_CONSTANT_TYPE) {
+        [line appendRawString:@"#"];
+        [line appendHexadecimalNumber:operand->immediateValue];
+    }
+    
+    [line setIsOperand:operandIndex startingAtIndex:0];
+    
+    return line;
+}
+
+- (NSObject<HPASMLine> *)buildCompleteOperandString:(DisasmStruct *)disasm inFile:(NSObject<HPDisassembledFile> *)file raw:(BOOL)raw {
+    NSObject<HPHopperServices> *services = _cpu.hopperServices;
+    
+    NSObject<HPASMLine> *line = [services blankASMLine];
+    
+    for (int op_index=0; op_index<=DISASM_MAX_OPERANDS; op_index++) {
+        NSObject<HPASMLine> *part = [self buildOperandString:disasm forOperandIndex:op_index inFile:file raw:raw];
+        if (part == nil) break;
+        if (op_index) [line appendRawString:@", "];
+        [line append:part];
+    }
+    
+    return line;
 }
 
 // Decompiler
@@ -316,7 +365,7 @@
 }
 
 - (ASTNode *)decompileInstructionAtAddress:(Address)a
-                                    disasm:(DisasmStruct)d
+                                    disasm:(DisasmStruct *)d
                                  addNode_p:(BOOL *)addNode_p
                            usingDecompiler:(Decompiler *)decompiler {
     return nil;
