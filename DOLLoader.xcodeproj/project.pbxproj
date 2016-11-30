@@ -259,7 +259,7 @@
 					"$(SRCROOT)/../include",
 				);
 				INFOPLIST_FILE = "DOL_Loader/DOLLoader-Info.plist";
-				INSTALL_PATH = "$(USER_LIBRARY_DIR)/Application Support/Hopper/PlugIns/V4/Loaders";
+				INSTALL_PATH = "$(USER_LIBRARY_DIR)/Application Support/Hopper/PlugIns/v4/Loaders";
 				PRODUCT_BUNDLE_IDENTIFIER = "com.sappharad.${PRODUCT_NAME:rfc1034identifier}";
 				PRODUCT_NAME = DOLLoader;
 				WRAPPER_EXTENSION = hopperLoader;
@@ -278,7 +278,7 @@
 					"$(SRCROOT)/../include",
 				);
 				INFOPLIST_FILE = "DOL_Loader/DOLLoader-Info.plist";
-				INSTALL_PATH = "$(USER_LIBRARY_DIR)/Application Support/Hopper/PlugIns/V4/Loaders";
+				INSTALL_PATH = "$(USER_LIBRARY_DIR)/Application Support/Hopper/PlugIns/v4/Loaders";
 				PRODUCT_BUNDLE_IDENTIFIER = "com.sappharad.${PRODUCT_NAME:rfc1034identifier}";
 				PRODUCT_NAME = DOLLoader;
 				WRAPPER_EXTENSION = hopperLoader;
