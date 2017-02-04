@@ -72,8 +72,8 @@
         NSObject<HPDetectedFileType> *type = [_services detectedType];
         [type setFileDescription:@"Gamecube/Wii Executable"];
         [type setAddressWidth:AW_32bits];
-        [type setCpuFamily:@"ibm"];
-        [type setCpuSubFamily:@"ppc"];
+        [type setCpuFamily:@"ppc"];
+        [type setCpuSubFamily:@"generic"];
         [type setShortDescriptionString:@"gamecube_dol"];
         return @[type];
     }
@@ -81,7 +81,7 @@
     return @[];
 }
 
-- (FileLoaderLoadingStatus)loadData:(NSData *)data usingDetectedFileType:(DetectedFileType *)fileType options:(FileLoaderOptions)options forFile:(NSObject<HPDisassembledFile> *)file usingCallback:(FileLoadingCallbackInfo)callback {
+- (FileLoaderLoadingStatus)loadData:(NSData *)data usingDetectedFileType:(NSObject<HPDetectedFileType> *)fileType options:(FileLoaderOptions)options forFile:(NSObject<HPDisassembledFile> *)file usingCallback:(FileLoadingCallbackInfo)callback {
     const void *bytes = (const void *)[data bytes];
     if (OSReadBigInt32(bytes, 0) != 0x100) return DIS_BadFormat;
     
@@ -126,8 +126,8 @@
         section.sectionName = @"bss";
     }
     
-    file.cpuFamily = @"ibm";
-    file.cpuSubFamily = @"ppc";
+    file.cpuFamily = @"ppc";
+    file.cpuSubFamily = @"generic";
     [file setAddressSpaceWidthInBits:32];
 
     [file addEntryPoint:OSReadBigInt32(bytes, 0xE0)];
@@ -143,7 +143,7 @@
     return DIS_NotSupported;
 }
 
-- (NSData *)extractFromData:(NSData *)data usingDetectedFileType:(DetectedFileType *)fileType returnAdjustOffset:(uint64_t *)adjustOffset {
+- (NSData *)extractFromData:(NSData *)data usingDetectedFileType:(NSObject<HPDetectedFileType> *)fileType returnAdjustOffset:(uint64_t *)adjustOffset {
     return nil;
 }
 
