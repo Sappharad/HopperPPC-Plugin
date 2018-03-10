@@ -36,15 +36,15 @@
 }
 
 - (NSString *)pluginAuthor {
-    return @"Paul Kratt";
+    return @"Paul Kratt and Jack Andersen";
 }
 
 - (NSString *)pluginCopyright {
-    return @"©2015";
+    return @"©2018";
 }
 
 - (NSString *)pluginVersion {
-    return @"0.5.0";
+    return @"0.6.0";
 }
 
 - (CPUEndianess)endianess {
@@ -72,8 +72,8 @@
         NSObject<HPDetectedFileType> *type = [_services detectedType];
         [type setFileDescription:@"Gamecube/Wii Executable"];
         [type setAddressWidth:AW_32bits];
-        [type setCpuFamily:@"ppc"];
-        [type setCpuSubFamily:@"generic"];
+        [type setCpuFamily:@"ppc32"];
+        [type setCpuSubFamily:@"gecko"];
         [type setShortDescriptionString:@"gamecube_dol"];
         return @[type];
     }
@@ -126,8 +126,8 @@
         section.sectionName = @"bss";
     }
     
-    file.cpuFamily = @"ppc";
-    file.cpuSubFamily = @"generic";
+    file.cpuFamily = @"ppc32";
+    file.cpuSubFamily = @"gecko";
     [file setAddressSpaceWidthInBits:32];
 
     [file addEntryPoint:OSReadBigInt32(bytes, 0xE0)];

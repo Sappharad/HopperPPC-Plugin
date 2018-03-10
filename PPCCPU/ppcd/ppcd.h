@@ -2,6 +2,8 @@
 
 #pragma once
 
+#include <Hopper/DisasmStruct.h>
+
 // Instruction class
 #define PPC_DISA_OTHER      0x0000  // No additional information
 #define PPC_DISA_64         0x0001  // 64-bit architecture only
@@ -27,6 +29,9 @@ typedef struct PPCD_CB
     int     r[4];                   // Index value for operand registers and immediates.
     u64     target;                 // Target address for branch instructions / Mask for RLWINM-like instructions
     int     iclass;                 // One or combination of PPC_DISA_* flags.
+    DisasmStruct *disasm;           // Interface with Hopper
+    int     opIdx;                  // Temporary operand index tracker for Hopper
+    u64*    lisArr;                 // Keeps values of previously-encountered LIS instructions to resolve with ADDI
 } PPCD_CB;
 
 void    PPCDisasm(PPCD_CB *disa);

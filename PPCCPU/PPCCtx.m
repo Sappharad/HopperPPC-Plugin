@@ -17,12 +17,21 @@
 @implementation PPCCtx {
     PPCCPU *_cpu;
     NSObject<HPDisassembledFile> *_file;
+    bool _trackingLis;
+    uint64_t lisArr[32];
+    NSMutableArray<NSNumber*> *_lr;
+    int64_t stackDisp;
 }
 
 - (instancetype)initWithCPU:(PPCCPU *)cpu andFile:(NSObject<HPDisassembledFile> *)file {
     if (self = [super init]) {
         _cpu = cpu;
         _file = file;
+        _trackingLis = false;
+        for (int i = 0; i < 32; ++i)
+            lisArr[i] = ~0;
+        _lr = [NSMutableArray new];
+        stackDisp = 0;
     }
     return self;
 }
@@ -37,20 +46,8 @@
 
 // Analysis
 
-- (BOOL)displacementIsAnArgument:(int64_t)displacement forProcedure:(NSObject<HPProcedure> *)procedure {
-    return NO;
-}
-
-- (NSUInteger)stackArgumentSlotForDisplacement:(int64_t)displacement inProcedure:(NSObject<HPProcedure> *)procedure {
-    return -1;
-}
-
-- (int64_t)displacementForStackSlotIndex:(NSUInteger)slot inProcedure:(NSObject<HPProcedure> *)procedure {
-    return 0;
-}
-
 - (Address)adjustCodeAddress:(Address)address {
-    // Instructions are always aligned to a multiple of 2.
+    // Instructions are always aligned to a multiple of 4.
     return address & ~3;
 }
 
@@ -72,48 +69,107 @@
 }
 
 - (BOOL)hasProcedurePrologAt:(Address)address {
-    return NO;
-    // procedures usually begins with a "movem.l xxx, -(a7)" or "link" instruction
-    /*uint32_t word = [_file readUInt32AtVirtualAddress:address];
-    return (word == 0x48e7) || ((word & 0xFFF8) == 0x4e50);*/
+    // procedures usually begin with a "stwu r1, -X(r1)" or "blr" instruction
+    uint32_t word = [_file readUInt32AtVirtualAddress:address];
+    return (word & 0xffff8000) == 0x94218000 || word == 0x4e800020;
 }
 
 - (NSUInteger)detectedPaddingLengthAt:(Address)address {
+#if 0
     NSUInteger len = 0;
-    while ([_file readUInt16AtVirtualAddress:address] == 0) {
-        address += 2;
-        len += 2;
+    uint32_t readVal;
+    while ((readVal = [_file readUInt32AtVirtualAddress:address]) == 0) {
+        //NSObject<HPSection>* sec = [_file sectionForVirtualAddress:address];
+        //printf("%08llX %04X %p\n", address, readVal, sec);
+        address += 4;
+        len += 4;
     }
-    
     return len;
+#endif
+    return 0;
 }
 
 - (void)analysisBeginsAt:(Address)entryPoint {
-
-}
-
-- (void)analysisEnded {
-
+    printf("analysisBeginsAt\n");
 }
 
 - (void)procedureAnalysisBeginsForProcedure:(NSObject<HPProcedure> *)procedure atEntryPoint:(Address)entryPoint {
-
+    printf("procedureAnalysisBeginsForProcedure %p\n", procedure);
+    _trackingLis = true;
 }
 
-- (void)procedureAnalysisOfPrologForProcedure:(NSObject<HPProcedure> *)procedure atEntryPoint:(Address)entryPoint {
-
+- (void)performProcedureAnalysis:(NSObject<HPProcedure> *)procedure basicBlock:(NSObject<HPBasicBlock> *)basicBlock disasm:(DisasmStruct *)disasm {
+    printf("performProcedureAnalysis %p\n", procedure);
 }
 
-- (void)procedureAnalysisOfEpilogForProcedure:(NSObject<HPProcedure> *)procedure atEntryPoint:(Address)entryPoint {
+- (void)performInstructionSpecificAnalysis:(DisasmStruct *)disasm forProcedure:(NSObject<HPProcedure> *)procedure inSegment:(NSObject<HPSegment> *)segment {
+    printf("performInstructionSpecificAnalysis %s %p\n", disasm->instruction.mnemonic, procedure);
     
+    // LIS/ADDI resolved address
+    for (int i = 0; i < DISASM_MAX_OPERANDS; ++i) {
+        DisasmOperand *operand = disasm->operand + i;
+        if (operand->userData[0] & DISASM_PPC_OPER_LIS_ADDI) {
+            if ([_file segmentForVirtualAddress:operand->userData[1]])
+            {
+                [segment addReferencesToAddress:operand->userData[1] fromAddress:disasm->virtualAddr];
+            }
+            else
+            {
+                [_file setInlineComment:[NSString stringWithFormat:@"0x%08llX", operand->userData[1]] atVirtualAddress:disasm->virtualAddr reason:CCReason_Automatic];
+            }
+            break;
+        }
+    }
+    
+    // Stack register handling
+    if (disasm->instruction.userData & DISASM_PPC_INST_LOAD_STORE &&
+        disasm->operand[2].type & DISASM_BUILD_REGISTER_INDEX_MASK(1)) {
+        if (disasm->operand[0].type & DISASM_BUILD_REGISTER_INDEX_MASK(1) &&
+            !strcmp(disasm->instruction.mnemonic, "stwu")) {
+            stackDisp = disasm->operand[1].immediateValue;
+            [procedure setVariableName:@"BP" forDisplacement:disasm->operand[1].immediateValue];
+        } else {
+            int64_t imm = disasm->operand[1].immediateValue + stackDisp;
+            if (imm < 0) {
+                [procedure setVariableName:[NSString stringWithFormat:@"var_%llX", -imm] forDisplacement:disasm->operand[1].immediateValue];
+            } else {
+                if (imm == 4 && disasm->instruction.mnemonic[0] == 's')
+                    [procedure setVariableName:@"LRpush" forDisplacement:disasm->operand[1].immediateValue];
+                else if (imm == 4 && disasm->instruction.mnemonic[0] == 'l')
+                    [procedure setVariableName:@"LRpop" forDisplacement:disasm->operand[1].immediateValue];
+                else
+                    [procedure setVariableName:[NSString stringWithFormat:@"arg_%llX", imm] forDisplacement:disasm->operand[1].immediateValue];
+            }
+        }
+    }
 }
 
-- (void)procedureAnalysisEndedForProcedure:(NSObject<HPProcedure> *)procedure atEntryPoint:(Address)entryPoint {
-
+- (void)updateProcedureAnalysis:(DisasmStruct *)disasm {
+    printf("updateProcedureAnalysis %s\n", disasm->instruction.mnemonic);
 }
 
 - (void)procedureAnalysisContinuesOnBasicBlock:(NSObject<HPBasicBlock> *)basicBlock {
+    printf("procedureAnalysisContinuesOnBasicBlock\n");
+}
 
+- (void)procedureAnalysisOfPrologForProcedure:(NSObject<HPProcedure> *)procedure atEntryPoint:(Address)entryPoint {
+    printf("procedureAnalysisOfPrologForProcedure %p\n", procedure);
+}
+
+- (void)procedureAnalysisOfEpilogForProcedure:(NSObject<HPProcedure> *)procedure atEntryPoint:(Address)entryPoint {
+    printf("procedureAnalysisOfEpilogForProcedure %p\n", procedure);
+}
+
+- (void)procedureAnalysisEndedForProcedure:(NSObject<HPProcedure> *)procedure atEntryPoint:(Address)entryPoint {
+    printf("procedureAnalysisEndedForProcedure %p\n", procedure);
+    _trackingLis = false;
+    for (int i = 0; i < 32; ++i)
+        lisArr[i] = ~0;
+    stackDisp = 0;
+}
+
+- (void)analysisEnded {
+    printf("analysisEnded\n");
 }
 
 - (Address)getThunkDestinationForInstructionAt:(Address)address {
@@ -128,140 +184,36 @@
     return 0;
 }
 
--(uint32_t)extractTextToNumber:(char*)opperand{
-    uint32_t retval = 0;
-    NSString* text = [NSString stringWithCString:opperand encoding:NSASCIIStringEncoding];
-    if([text hasPrefix:@"0x"]){
-        //This is Hex
-        NSCharacterSet* cs = [NSCharacterSet characterSetWithCharactersInString:@"0123456789abcdef"];
-        NSString* hexa = [[text componentsSeparatedByCharactersInSet:[cs invertedSet]] componentsJoinedByString:@""];
-        NSScanner* scanny = [NSScanner scannerWithString:hexa];
-        [scanny scanHexInt:&retval];
-    }
-    else{
-        //Just pull all of the numbers we can find and shove
-        NSString* numbers = [[text componentsSeparatedByCharactersInSet:
-                              [[NSCharacterSet decimalDigitCharacterSet] invertedSet]]
-                             componentsJoinedByString:@""];
-        retval = [numbers intValue];
-    }
-    return retval;
-}
-
-- (uint32_t)readLongAt:(uint32_t)address {
-    return [_file readUInt32AtVirtualAddress:address];
-}
-
 - (int)disassembleSingleInstruction:(DisasmStruct *)disasm usingProcessorMode:(NSUInteger)mode {
-    PPCD_CB d;
-    d.pc = disasm->virtualAddr;
-    d.instr = [self readLongAt:(uint32_t)disasm->virtualAddr];
-    PPCDisasm(&d);
-    
-    //printf ("%08X  %08X  %-12s%-30s\n", pc, instr, disa.mnemonic, disa.operands);
-    
-    if ((d.iclass & PPC_DISA_ILLEGAL) == PPC_DISA_ILLEGAL) return DISASM_UNKNOWN_OPCODE;
-
     disasm->instruction.branchType = DISASM_BRANCH_NONE;
     disasm->instruction.addressValue = 0;
-    for (int i=0; i<DISASM_MAX_OPERANDS; i++) disasm->operand[i].type = DISASM_OPERAND_NO_OPERAND;
-
-    // Quick and dirty split of the instruction
-    char *ptr = d.mnemonic;
-    char *instrPtr = disasm->instruction.mnemonic;
-    while (*ptr && *ptr != ' ') *instrPtr++ = tolower(*ptr++);
-    *instrPtr = 0;
-    while (*ptr == ' ') ptr++;
-    ptr = d.operands;
-
-    /*int operandIndex = 0;
-    char *operand = disasm->operand[operandIndex].mnemonic;
-    int p_level = 0;
-    while (*ptr) {
-        if (*ptr == ',' && p_level == 0) {
-            *operand = 0;
-            operand = disasm->operand[++operandIndex].mnemonic;
-            ptr++;
-            while (*ptr == ' ') ptr++;
-        }
-        else {
-            if (*ptr == '(') p_level++;
-            if (*ptr == ')') p_level--;
-            *operand++ = tolower(*ptr++);
-        }
+    disasm->instruction.userData = 0;
+    for (int i=0; i<DISASM_MAX_REG_CLASSES; i++) {
+        disasm->implicitlyReadRegisters[i] = 0;
+        disasm->implicitlyWrittenRegisters[i] = 0;
     }
-    *operand = 0;*/
-
-    // In this early version, only branch instructions are analyzed in order to correctly
-    // construct basic blocks of procedures.
-    //
-    // This is the strict minimum!
-    //
-    // You should also fill the "operand" description for every other instruction to take
-    // advantage of the various analysis of Hopper.
-
-    if (d.iclass & PPC_DISA_BRANCH) {
-        if (strncmp(disasm->instruction.mnemonic, "bl", 2) == 0) {
-            disasm->instruction.branchType = DISASM_BRANCH_CALL;
-            disasm->instruction.addressValue = [self extractTextToNumber:d.operands];
-            disasm->operand[0].type = DISASM_OPERAND_CONSTANT_TYPE | DISASM_OPERAND_RELATIVE;
-            disasm->operand[0].immediateValue = disasm->instruction.addressValue;
-        }
-        else {
-            if (disasm->instruction.mnemonic[0] == 'b' && disasm->instruction.mnemonic[1]==0) {
-                disasm->instruction.branchType = DISASM_BRANCH_JMP;
-            }
-            if (strncmp(disasm->instruction.mnemonic, "bhi", 3) == 0) {
-                disasm->instruction.branchType = DISASM_BRANCH_JA;
-            }
-            if (strncmp(disasm->instruction.mnemonic, "bls", 3) == 0) {
-                disasm->instruction.branchType = DISASM_BRANCH_JB;
-            }
-            if (strncmp(disasm->instruction.mnemonic, "bcc", 3) == 0) {
-                disasm->instruction.branchType = DISASM_BRANCH_JNC;
-            }
-            if (strncmp(disasm->instruction.mnemonic, "bcs", 3) == 0) {
-                disasm->instruction.branchType = DISASM_BRANCH_JC;
-            }
-            if (strncmp(disasm->instruction.mnemonic, "bne", 3) == 0) {
-                disasm->instruction.branchType = DISASM_BRANCH_JNE;
-            }
-            if (strncmp(disasm->instruction.mnemonic, "beq", 3) == 0) {
-                disasm->instruction.branchType = DISASM_BRANCH_JE;
-            }
-            if (strncmp(disasm->instruction.mnemonic, "bvc", 3) == 0) {
-                disasm->instruction.branchType = DISASM_BRANCH_JNO;
-            }
-            if (strncmp(disasm->instruction.mnemonic, "bvs", 3) == 0) {
-                disasm->instruction.branchType = DISASM_BRANCH_JO;
-            }
-            if (strncmp(disasm->instruction.mnemonic, "bpl", 3) == 0) {
-                disasm->instruction.branchType = DISASM_BRANCH_JA;
-            }
-            if (strncmp(disasm->instruction.mnemonic, "bmi", 3) == 0) {
-                disasm->instruction.branchType = DISASM_BRANCH_JB;
-            }
-            if (strncmp(disasm->instruction.mnemonic, "bge", 3) == 0) {
-                disasm->instruction.branchType = DISASM_BRANCH_JNL;
-            }
-            if (strncmp(disasm->instruction.mnemonic, "blt", 3) == 0) {
-                disasm->instruction.branchType = DISASM_BRANCH_JL;
-            }
-            if (strncmp(disasm->instruction.mnemonic, "bgt", 3) == 0) {
-                disasm->instruction.branchType = DISASM_BRANCH_JG;
-            }
-            if (strncmp(disasm->instruction.mnemonic, "ble", 3) == 0) {
-                disasm->instruction.branchType = DISASM_BRANCH_JNG;
-            }
-            disasm->instruction.addressValue = [self extractTextToNumber:d.operands];
-            disasm->operand[0].type = DISASM_OPERAND_CONSTANT_TYPE | DISASM_OPERAND_RELATIVE;
-            disasm->operand[0].immediateValue = disasm->instruction.addressValue;
-        }
+    for (int i=0; i<DISASM_MAX_OPERANDS; i++) {
+        disasm->operand[i].type = DISASM_OPERAND_NO_OPERAND;
+        disasm->operand[i].accessMode = DISASM_ACCESS_NONE;
+        bzero(&disasm->operand[i].memory, sizeof(disasm->operand[i].memory));
+        disasm->operand[i].isBranchDestination = 0;
+        disasm->operand[i].userData[0] = 0;
     }
-
-    if (strncmp(disasm->instruction.mnemonic, "blr", 3) == 0) {
-        disasm->instruction.branchType = DISASM_BRANCH_RET;
+    
+    PPCD_CB d;
+    d.pc = disasm->virtualAddr;
+    d.instr = [_file readUInt32AtVirtualAddress:disasm->virtualAddr];
+    d.disasm = disasm;
+    d.lisArr = _trackingLis ? lisArr : NULL;
+    PPCDisasm(&d);
+    
+#if 0
+    if (_trackingLis) {
+        printf ("%08X  %08X  %-12s%-30s\n", d.pc, d.instr, d.mnemonic, d.operands);
     }
+#endif
+    
+    //if ((d.iclass & PPC_DISA_ILLEGAL) == PPC_DISA_ILLEGAL) return DISASM_UNKNOWN_OPCODE;
 
     return 4; //All instructions are 4 bytes
 }
@@ -270,38 +222,34 @@
     return NO;
 }
 
-- (void)performBranchesAnalysis:(DisasmStruct *)disasm computingNextAddress:(Address *)next andBranches:(NSMutableArray *)branches forProcedure:(NSObject<HPProcedure> *)procedure basicBlock:(NSObject<HPBasicBlock> *)basicBlock ofSegment:(NSObject<HPSegment> *)segment calledAddresses:(NSMutableArray *)calledAddresses callsites:(NSMutableArray *)callSitesAddresses {
-
-}
-
-- (void)performInstructionSpecificAnalysis:(DisasmStruct *)disasm forProcedure:(NSObject<HPProcedure> *)procedure inSegment:(NSObject<HPSegment> *)segment {
-
-}
-
-- (void)performProcedureAnalysis:(NSObject<HPProcedure> *)procedure basicBlock:(NSObject<HPBasicBlock> *)basicBlock disasm:(DisasmStruct *)disasm {
-
-}
-
-- (void)updateProcedureAnalysis:(DisasmStruct *)disasm {
-
+- (void)performBranchesAnalysis:(DisasmStruct *)disasm computingNextAddress:(Address *)next andBranches:(NSMutableArray<NSNumber *> *)branches forProcedure:(NSObject<HPProcedure> *)procedure basicBlock:(NSObject<HPBasicBlock> *)basicBlock ofSegment:(NSObject<HPSegment> *)segment calledAddresses:(NSMutableArray<NSNumber *> *)calledAddresses callsites:(NSMutableArray<NSNumber *> *)callSitesAddresses {
+#if 0
+    if (disasm->instruction.branchType == DISASM_BRANCH_CALL)
+    {
+        [_cpu->_lr addObject:@(disasm->virtualAddr + 4)];
+        printf("JUST PUSHED %d\n", [_cpu->_lr count]);
+        *next = disasm->instruction.addressValue;
+    }
+    else if (disasm->instruction.branchType == DISASM_BRANCH_RET)
+    {
+        printf(" WILL POP %d\n", [_cpu->_lr count]);
+        *next = [[_cpu->_lr lastObject] unsignedIntegerValue];
+        [_cpu->_lr removeLastObject];
+    }
+#endif
+    if (disasm->instruction.branchType == DISASM_BRANCH_CALL) {
+        [callSitesAddresses addObject:@(disasm->instruction.addressValue)];
+        *next = disasm->virtualAddr + 4;
+    } else if (disasm->instruction.branchType == DISASM_BRANCH_RET) {
+        *next = BAD_ADDRESS;
+    } else {
+        [branches addObject:@(disasm->instruction.addressValue)];
+        *next = disasm->virtualAddr + 4;
+    }
+    printf("%08X NEXT %08X %d\n", disasm->virtualAddr, *next, disasm->instruction.branchType);
 }
 
 // Printing
-
-- (NSString *)defaultFormattedVariableNameForDisplacement:(int64_t)displacement inProcedure:(NSObject<HPProcedure> *)procedure {
-    return [NSString stringWithFormat:@"var%lld", displacement];
-}
-
-/*- (void)buildInstructionString:(DisasmStruct *)disasm forSegment:(NSObject<HPSegment> *)segment populatingInfo:(NSObject<HPFormattedInstructionInfo> *)formattedInstructionInfo {
-    const char *spaces = "                ";
-    strcpy(disasm->completeInstructionString, disasm->instruction.mnemonic);
-    strcat(disasm->completeInstructionString, spaces + strlen(disasm->instruction.mnemonic));
-    for (int i=0; i<DISASM_MAX_OPERANDS; i++) {
-        if (disasm->operand[i].mnemonic[0] == 0) break;
-        if (i) strcat(disasm->completeInstructionString, ", ");
-        strcat(disasm->completeInstructionString, disasm->operand[i].mnemonic);
-    }
-}*/
 
 - (NSObject<HPASMLine> *)buildMnemonicString:(DisasmStruct *)disasm inFile:(NSObject<HPDisassembledFile> *)file {
     NSObject<HPHopperServices> *services = _cpu.hopperServices;
@@ -310,17 +258,76 @@
     return line;
 }
 
+static RegClass GetRegisterClass(DisasmOperandType type)
+{
+    for (int i = 0; i < DISASM_MAX_REG_CLASSES; ++i)
+        if (type & DISASM_BUILD_REGISTER_CLS_MASK(i))
+            return i;
+    return -1;
+}
+
+static int GetRegisterIndex(DisasmOperandType type)
+{
+    for (int i = 0; i < DISASM_MAX_REG_INDEX; ++i)
+        if (type & DISASM_BUILD_REGISTER_INDEX_MASK(i))
+            return i;
+    return -1;
+}
+
 - (NSObject<HPASMLine> *)buildOperandString:(DisasmStruct *)disasm forOperandIndex:(NSUInteger)operandIndex inFile:(NSObject<HPDisassembledFile> *)file raw:(BOOL)raw {
     if (operandIndex >= DISASM_MAX_OPERANDS) return nil;
     DisasmOperand *operand = disasm->operand + operandIndex;
     if (operand->type == DISASM_OPERAND_NO_OPERAND) return nil;
    
+    // Get the format requested by the user
+    ArgFormat format = [file formatForArgument:operandIndex atVirtualAddress:disasm->virtualAddr];
+    
     NSObject<HPHopperServices> *services = _cpu.hopperServices;
     NSObject<HPASMLine> *line = [services blankASMLine];
     
     if (operand->type & DISASM_OPERAND_CONSTANT_TYPE) {
-        [line appendRawString:@"#"];
-        [line appendHexadecimalNumber:operand->immediateValue];
+        if ((format == Format_Default || format == Format_StackVariable) &&
+            disasm->instruction.userData & DISASM_PPC_INST_LOAD_STORE &&
+            disasm->operand[2].type & DISASM_BUILD_REGISTER_INDEX_MASK(1) && operandIndex == 1) {
+            NSObject<HPProcedure> *proc = [file procedureAt:disasm->virtualAddr];
+            if (proc) {
+                NSString *variableName = [proc variableNameForDisplacement:operand->immediateValue];
+                if (variableName) {
+                    [line appendVariableName:variableName withDisplacement:operand->immediateValue];
+                    [line setIsOperand:operandIndex startingAtIndex:0];
+                    return line;
+                }
+            }
+        }
+        
+        if (format == Format_Default) {
+            if (disasm->instruction.addressValue != 0) {
+                format = Format_Address;
+            }
+            else {
+                if (operand->userData[0] & DISASM_PPC_OPER_IMM_HEX || llabs(operand->immediateValue) > 255)
+                    format = Format_Hexadecimal | Format_Signed;
+                else
+                    format = Format_Decimal | Format_Signed;
+            }
+        }
+        [line append:[file formatNumber:operand->immediateValue
+                                     at:disasm->virtualAddr usingFormat:format
+                             andBitSize:32]];
+    }
+    else if (operand->type & DISASM_OPERAND_REGISTER_TYPE || operand->type & DISASM_OPERAND_MEMORY_TYPE) {
+        RegClass regCls = GetRegisterClass(operand->type);
+        int regIdx = GetRegisterIndex(operand->type);
+        [line appendRegister:[_cpu registerIndexToString:regIdx
+                                                 ofClass:regCls
+                                             withBitSize:32
+                                                position:DISASM_LOWPOSITION
+                                          andSyntaxIndex:file.userRequestedSyntaxIndex]
+                     ofClass:regCls
+                    andIndex:regIdx];
+    }
+    else if (operand->type & DISASM_OPERAND_OTHER) {
+        [line appendRegister:@(operand->userString)];
     }
     
     [line setIsOperand:operandIndex startingAtIndex:0];
@@ -333,11 +340,51 @@
     
     NSObject<HPASMLine> *line = [services blankASMLine];
     
-    for (int op_index=0; op_index<=DISASM_MAX_OPERANDS; op_index++) {
+    int op_index = 0;
+    
+    if (disasm->instruction.userData & DISASM_PPC_INST_LOAD_STORE)
+    {
+        NSObject<HPASMLine> *part = [self buildOperandString:disasm forOperandIndex:0 inFile:file raw:raw];
+        if (part == nil) return line;
+        [line append:part];
+        [line appendRawString:@", "];
+        
+        part = [self buildOperandString:disasm forOperandIndex:1 inFile:file raw:raw];
+        if (part == nil) return line;
+        [line append:part];
+        [line appendRawString:@"("];
+        
+        part = [self buildOperandString:disasm forOperandIndex:2 inFile:file raw:raw];
+        if (part == nil) return line;
+        [line append:part];
+        [line appendRawString:@")"];
+        
+        op_index = 3;
+    }
+    
+    for (; op_index<=DISASM_MAX_OPERANDS; op_index++) {
         NSObject<HPASMLine> *part = [self buildOperandString:disasm forOperandIndex:op_index inFile:file raw:raw];
         if (part == nil) break;
         if (op_index) [line appendRawString:@", "];
         [line append:part];
+        
+        // LIS/ADDI resolved address
+        DisasmOperand *operand = disasm->operand + op_index;
+        if (operand->userData[0] & DISASM_PPC_OPER_RLWIMI) {
+            int ra = GetRegisterIndex(disasm->operand[0].type);
+            int rs = GetRegisterIndex(disasm->operand[1].type);
+            int sh = (int)operand->userData[1];
+            int mb = (int)operand->userData[2];
+            int me = (int)operand->userData[3];
+            if (sh == 0) {
+                [line appendComment:[NSString stringWithFormat:@" # r%d = r%d & 0x%08X", ra, rs, MASK32VAL(mb, me)]];
+            } else if (me + sh > 31) {
+                // Actually a shift right
+                [line appendComment:[NSString stringWithFormat:@" # r%d = (r%d >> %d) & 0x%08X", ra, rs, 32 - sh, MASK32VAL(mb, me)]];
+            } else {
+                [line appendComment:[NSString stringWithFormat:@" # r%d = (r%d << %d) & 0x%08X", ra, rs, sh, MASK32VAL(mb, me)]];
+            }
+        }
     }
     
     return line;
@@ -379,6 +426,10 @@
 
 - (BOOL)instructionCanBeUsedToExtractDirectMemoryReferences:(DisasmStruct *)disasmStruct {
     return YES;
+}
+
+- (BOOL)instructionOnlyLoadsAddress:(DisasmStruct *)disasmStruct {
+    return NO;
 }
 
 - (BOOL)instructionMayBeASwitchStatement:(DisasmStruct *)disasmStruct {

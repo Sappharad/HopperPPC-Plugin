@@ -11,7 +11,7 @@
 		07F966DE18C5BA1200B394AF /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = 07F966DC18C5BA1200B394AF /* InfoPlist.strings */; };
 		07F966E718C5BA6500B394AF /* PPCCPU.m in Sources */ = {isa = PBXBuildFile; fileRef = 07F966E618C5BA6500B394AF /* PPCCPU.m */; };
 		07F966EB18C5BAFE00B394AF /* PPCCtx.m in Sources */ = {isa = PBXBuildFile; fileRef = 07F966EA18C5BAFE00B394AF /* PPCCtx.m */; };
-		9E4002FA1BED8FBE0063E512 /* ppcd.c in Sources */ = {isa = PBXBuildFile; fileRef = 9E4002F71BED8FBE0063E512 /* ppcd.c */; };
+		9E4002FA1BED8FBE0063E512 /* ppcd.m in Sources */ = {isa = PBXBuildFile; fileRef = 9E4002F71BED8FBE0063E512 /* ppcd.m */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -26,7 +26,7 @@
 		07F966EA18C5BAFE00B394AF /* PPCCtx.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = PPCCtx.m; sourceTree = "<group>"; };
 		9E4002F51BED8FBE0063E512 /* CommonDefs.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = CommonDefs.h; path = ppcd/CommonDefs.h; sourceTree = "<group>"; };
 		9E4002F61BED8FBE0063E512 /* main.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = main.cpp; path = ppcd/main.cpp; sourceTree = "<group>"; };
-		9E4002F71BED8FBE0063E512 /* ppcd.c */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.c; name = ppcd.c; path = ppcd/ppcd.c; sourceTree = "<group>"; };
+		9E4002F71BED8FBE0063E512 /* ppcd.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = ppcd.m; path = ppcd/ppcd.m; sourceTree = "<group>"; };
 		9E4002F81BED8FBE0063E512 /* ppcd.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ppcd.h; path = ppcd/ppcd.h; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -96,7 +96,7 @@
 			children = (
 				9E4002F51BED8FBE0063E512 /* CommonDefs.h */,
 				9E4002F61BED8FBE0063E512 /* main.cpp */,
-				9E4002F71BED8FBE0063E512 /* ppcd.c */,
+				9E4002F71BED8FBE0063E512 /* ppcd.m */,
 				9E4002F81BED8FBE0063E512 /* ppcd.h */,
 			);
 			name = ppcd;
@@ -182,7 +182,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				9E4002FA1BED8FBE0063E512 /* ppcd.c in Sources */,
+				9E4002FA1BED8FBE0063E512 /* ppcd.m in Sources */,
 				07F966E718C5BA6500B394AF /* PPCCPU.m in Sources */,
 				07F966EB18C5BAFE00B394AF /* PPCCtx.m in Sources */,
 			);
