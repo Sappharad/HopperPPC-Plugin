@@ -11,7 +11,7 @@
 #import <Hopper/CommonTypes.h>
 #import <Hopper/CPUDefinition.h>
 #import <Hopper/HPDisassembledFile.h>
-#import "CommonDefs.h"
+#import "ppcd/CommonDefs.h"
 #import "ppcd/ppcd.h"
 
 @implementation PPCCtx {
