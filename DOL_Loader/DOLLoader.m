@@ -301,7 +301,76 @@ static const struct SectionRange* FindSectionRange(const struct SectionRange* ra
 }
 
 - (FileLoaderLoadingStatus)loadDebugData:(NSData *)data forFile:(NSObject<HPDisassembledFile> *)file usingCallback:(FileLoadingCallbackInfo)callback {
-    return DIS_NotSupported;
+    char* mutData = malloc(data.length + 1);
+    [data getBytes:mutData length:data.length];
+    mutData[data.length] = '\0';
+    const char* sep = "\n";
+    const char* sep2 = " ";
+    char *line, *word, *brkt, *brkb;
+    int wordIdx;
+    for (line = strtok_r(mutData, sep, &brkt);
+         line;
+         line = strtok_r(NULL, sep, &brkt))
+    {
+        Address address;
+        const char* type;
+        long arrCount;
+        
+        for (word = strtok_r(line, sep2, &brkb), wordIdx = 0;
+             word;
+             word = strtok_r(NULL, sep2, &brkb), ++wordIdx)
+        {
+            switch (wordIdx)
+            {
+            case 0:
+                address = (Address)strtoul(word, NULL, 16);
+                break;
+            case 1:
+                type = word;
+                break;
+            case 2:
+                arrCount = strtol(word, NULL, 16);
+                break;
+            }
+            if (wordIdx == 2) {
+                word += strlen(word) + 1;
+                break;
+            }
+        }
+        
+        if (!strcmp(type, "FUNC")) {
+            if (![file hasProcedureAt:address])
+                [file makeProcedureAt:address];
+        } else if (!strcmp(type, "STR")) {
+            [file setType:Type_ASCII atVirtualAddress:address forLength:arrCount];
+        } else if (!strcmp(type, "WSTR")) {
+            [file setType:Type_Unicode atVirtualAddress:address forLength:arrCount];
+        } else if (!strcmp(type, "BYTE")) {
+            [file setType:Type_Int8 atVirtualAddress:address forLength:arrCount ? arrCount : 1];
+        } else if (!strcmp(type, "WORD")) {
+            [file setType:Type_Int16 atVirtualAddress:address forLength:arrCount ? arrCount : 2];
+        } else if (!strcmp(type, "DWORD")) {
+            [file setType:Type_Int32 atVirtualAddress:address forLength:arrCount ? arrCount : 4];
+        } else if (!strcmp(type, "FLOAT")) {
+            [file setType:Type_Int32 atVirtualAddress:address forLength:arrCount ? arrCount : 4];
+            [file setFormat:Format_Float forArgument:0 atVirtualAddress:address];
+        } else if (!strcmp(type, "DOUBLE")) {
+            [file setType:Type_Int64 atVirtualAddress:address forLength:arrCount ? arrCount : 8];
+            [file setFormat:Format_Float forArgument:0 atVirtualAddress:address];
+        } else if (!strcmp(type, "LVAR")) {
+            NSObject<HPProcedure> *proc = [file procedureAt:address];
+            if (!proc)
+                proc = [file makeProcedureAt:address];
+            [proc setVariableName:@(word) forDisplacement:arrCount];
+            continue;
+        } else if (!strcmp(type, "COMM")) {
+            [file setInlineComment:@(word) atVirtualAddress:address reason:CCReason_User];
+            continue;
+        }
+        [file setName:@(word) forVirtualAddress:address reason:NCReason_User];
+    }
+    free(mutData);
+    return DIS_OK;
 }
 
 - (NSData *)extractFromData:(NSData *)data usingDetectedFileType:(NSObject<HPDetectedFileType> *)fileType returnAdjustOffset:(uint64_t *)adjustOffset {

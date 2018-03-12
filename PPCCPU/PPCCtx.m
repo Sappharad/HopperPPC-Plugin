@@ -126,11 +126,9 @@ static NSString* MakeNumericComment(u32 val)
             }
             
             // SDA/SDA2 symbol synthesis
-            if (disasm->operand[0].type & DISASM_BUILD_REGISTER_INDEX_MASK(13) &&
-                [segment.segmentName isEqualToString:@"INIT"])
+            if (disasm->operand[0].type & DISASM_BUILD_REGISTER_INDEX_MASK(13) && segment == _file.firstSegment)
                 foundSDA = (u32)operand->userData[1];
-            else if (disasm->operand[0].type & DISASM_BUILD_REGISTER_INDEX_MASK(2) &&
-                       [segment.segmentName isEqualToString:@"INIT"])
+            else if (disasm->operand[0].type & DISASM_BUILD_REGISTER_INDEX_MASK(2) && segment == _file.firstSegment)
                 foundSDA2 = (u32)operand->userData[1];
             break;
         }
@@ -151,7 +149,7 @@ static NSString* MakeNumericComment(u32 val)
                 if (imm == 4 && disasm->instruction.mnemonic[0] == 's')
                     [procedure setVariableName:@"LRpush" forDisplacement:disasm->operand[1].immediateValue];
                 else if (imm == 4 && disasm->instruction.mnemonic[0] == 'l')
-                    [procedure setVariableName:@"LRpop" forDisplacement:disasm->operand[1].immediateValue];
+                    [procedure setVariableName:@"LR" forDisplacement:disasm->operand[1].immediateValue];
                 else
                     [procedure setVariableName:[NSString stringWithFormat:@"arg_%X", imm] forDisplacement:disasm->operand[1].immediateValue];
             }
@@ -280,7 +278,7 @@ static NSString* MakeNumericComment(u32 val)
     }
 #endif
     
-    //if ((d.iclass & PPC_DISA_ILLEGAL) == PPC_DISA_ILLEGAL) return DISASM_UNKNOWN_OPCODE;
+    if ((d.iclass & PPC_DISA_ILLEGAL) == PPC_DISA_ILLEGAL) return DISASM_UNKNOWN_OPCODE;
     return 4; //All instructions are 4 bytes
 }
 
