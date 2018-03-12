@@ -65,12 +65,12 @@
 }
 
 - (NSArray *)cpuSubFamiliesForFamily:(NSString *)family {
-    if ([family isEqualToString:@"ppcg"]) return @[@"gecko"];
+    if ([family isEqualToString:@"ppc32"]) return @[@"gecko"];
     return nil;
 }
 
 - (int)addressSpaceWidthInBitsForCPUFamily:(NSString *)family andSubFamily:(NSString *)subFamily {
-    if ([family isEqualToString:@"ppcg"] && [subFamily isEqualToString:@"gecko"]) return 32;
+    if ([family isEqualToString:@"ppc32"] && [subFamily isEqualToString:@"gecko"]) return 32;
     return 0;
 }
 

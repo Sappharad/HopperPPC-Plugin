@@ -31,7 +31,7 @@ typedef struct PPCD_CB
     int     iclass;                 // One or combination of PPC_DISA_* flags.
     DisasmStruct *disasm;           // Interface with Hopper
     int     opIdx;                  // Temporary operand index tracker for Hopper
-    u64*    lisArr;                 // Keeps values of previously-encountered LIS instructions to resolve with ADDI
+    s32*    lisArr;                 // Keeps values of previously-encountered LIS instructions to resolve with ADDI
 } PPCD_CB;
 
 void    PPCDisasm(PPCD_CB *disa);
