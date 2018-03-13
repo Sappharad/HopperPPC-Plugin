@@ -19,15 +19,15 @@
 		07F966D718C5BA1200B394AF /* CoreFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreFoundation.framework; path = System/Library/Frameworks/CoreFoundation.framework; sourceTree = SDKROOT; };
 		07F966DB18C5BA1200B394AF /* PPCCPU-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "PPCCPU-Info.plist"; sourceTree = "<group>"; };
 		07F966DD18C5BA1200B394AF /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
-		07F966DF18C5BA1200B394AF /* PPCCPU-Prefix.pch */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "PPCCPU-Prefix.pch"; sourceTree = "<group>"; };
-		07F966E518C5BA6500B394AF /* PPCCPU.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = PPCCPU.h; sourceTree = "<group>"; };
-		07F966E618C5BA6500B394AF /* PPCCPU.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = PPCCPU.m; sourceTree = "<group>"; };
-		07F966E918C5BAFE00B394AF /* PPCCtx.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = PPCCtx.h; sourceTree = "<group>"; };
-		07F966EA18C5BAFE00B394AF /* PPCCtx.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = PPCCtx.m; sourceTree = "<group>"; };
-		9E4002F51BED8FBE0063E512 /* CommonDefs.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = CommonDefs.h; path = ppcd/CommonDefs.h; sourceTree = "<group>"; };
-		9E4002F61BED8FBE0063E512 /* main.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = main.cpp; path = ppcd/main.cpp; sourceTree = "<group>"; };
-		9E4002F71BED8FBE0063E512 /* ppcd.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; name = ppcd.m; path = ppcd/ppcd.m; sourceTree = "<group>"; };
-		9E4002F81BED8FBE0063E512 /* ppcd.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = ppcd.h; path = ppcd/ppcd.h; sourceTree = "<group>"; };
+		07F966DF18C5BA1200B394AF /* PPCCPU-Prefix.pch */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; lineEnding = 0; path = "PPCCPU-Prefix.pch"; sourceTree = "<group>"; };
+		07F966E518C5BA6500B394AF /* PPCCPU.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; lineEnding = 0; path = PPCCPU.h; sourceTree = "<group>"; };
+		07F966E618C5BA6500B394AF /* PPCCPU.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; lineEnding = 0; path = PPCCPU.m; sourceTree = "<group>"; };
+		07F966E918C5BAFE00B394AF /* PPCCtx.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; lineEnding = 0; path = PPCCtx.h; sourceTree = "<group>"; };
+		07F966EA18C5BAFE00B394AF /* PPCCtx.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; lineEnding = 0; path = PPCCtx.m; sourceTree = "<group>"; };
+		9E4002F51BED8FBE0063E512 /* CommonDefs.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; lineEnding = 0; name = CommonDefs.h; path = ppcd/CommonDefs.h; sourceTree = "<group>"; };
+		9E4002F61BED8FBE0063E512 /* main.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; lineEnding = 0; name = main.cpp; path = ppcd/main.cpp; sourceTree = "<group>"; };
+		9E4002F71BED8FBE0063E512 /* ppcd.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; lineEnding = 0; name = ppcd.m; path = ppcd/ppcd.m; sourceTree = "<group>"; };
+		9E4002F81BED8FBE0063E512 /* ppcd.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; lineEnding = 0; name = ppcd.h; path = ppcd/ppcd.h; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
