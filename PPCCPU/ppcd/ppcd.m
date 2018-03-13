@@ -1231,6 +1231,8 @@ static void ldst(const char *name, int x/*indexed*/, int load, int L, int string
     
     if(x)
     {
+        s32 thisLis = o->lisArr ? o->lisArr[DIS_RA] : ~0;
+
         integer3(name, fload ? 'F' : 'X', DAB_D|DAB_A|DAB_B);
         
         DisasmOperand* op = &o->disasm->operand[o->opIdx-1];
@@ -1247,6 +1249,12 @@ static void ldst(const char *name, int x/*indexed*/, int load, int L, int string
             o->disasm->operand[0].accessMode = DISASM_ACCESS_READ;
             o->disasm->implicitlyReadRegisters[RegClass_GeneralPurposeRegister] |= DISASM_BUILD_REGISTER_INDEX_MASK(DIS_RD);
             o->disasm->implicitlyWrittenRegisters[RegClass_GeneralPurposeRegister] &= ~DISASM_BUILD_REGISTER_INDEX_MASK(DIS_RD);
+        }
+        
+        if (thisLis != ~0)
+        {
+            o->disasm->instruction.userData |= DISASM_PPC_INST_INDEXED_LOAD_STORE;
+            op->userData[1] = thisLis;
         }
     }
     else
