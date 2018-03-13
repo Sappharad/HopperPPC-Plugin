@@ -675,6 +675,15 @@ static void addi(const char *suffix)
         s32 thisLis = o->lisArr ? o->lisArr[DIS_RA] : ~0;
         integer5(mnem, 'D', DAB_D|DAB_A, 0, 1);
         o->iclass |= PPC_DISA_SIMPLIFIED;
+        o->disasm->instruction.userData |= DISASM_PPC_INST_SUBI;
+        
+        DisasmOperand* op = &o->disasm->operand[1];
+        op->type = DISASM_OPERAND_MEMORY_TYPE;
+        op->type |= DISASM_BUILD_REGISTER_CLS_MASK(RegClass_GeneralPurposeRegister);
+        op->type |= DISASM_BUILD_REGISTER_INDEX_MASK(DIS_RA);
+        op->memory.baseRegistersMask = DISASM_BUILD_REGISTER_INDEX_MASK(DIS_RA);
+        op->memory.displacement = o->disasm->operand[2].immediateValue;
+        
         if (thisLis != ~0)
         {
             DisasmOperand* op = &o->disasm->operand[o->opIdx-1];
@@ -690,6 +699,15 @@ static void addi(const char *suffix)
         sprintf(mnem, "addi%s", suffix);
         s32 thisLis = o->lisArr ? o->lisArr[DIS_RA] : ~0;
         integer5(mnem, 'D', DAB_D|DAB_A, 0, 0);
+        o->disasm->instruction.userData |= DISASM_PPC_INST_ADDI;
+        
+        DisasmOperand* op = &o->disasm->operand[1];
+        op->type = DISASM_OPERAND_MEMORY_TYPE;
+        op->type |= DISASM_BUILD_REGISTER_CLS_MASK(RegClass_GeneralPurposeRegister);
+        op->type |= DISASM_BUILD_REGISTER_INDEX_MASK(DIS_RA);
+        op->memory.baseRegistersMask = DISASM_BUILD_REGISTER_INDEX_MASK(DIS_RA);
+        op->memory.displacement = o->disasm->operand[2].immediateValue;
+        
         if (thisLis != ~0)
         {
             DisasmOperand* op = &o->disasm->operand[o->opIdx-1];
@@ -2071,7 +2089,12 @@ void PPCDisasm(PPCD_CB *discb)
         case 01471: integer3("orc.", 'Z', ASB_A|ASB_S|ASB_B); break;
         case 01554: integer3("ecowx", 'X', DAB_D|DAB_A|DAB_B); o->iclass = PPC_DISA_OPTIONAL; break; // ecowx
         case 01556: ldst3("sthux", 1, 0); break;                             // sthux
-        case 01570: integer3("or", 'Z', ASB_A|ASB_S|ASB_B); break;           // orx
+        case 01570:
+#ifdef SIMPLIFIED
+        if (DIS_RS == DIS_RB) { integer3("mr", 'Z', ASB_A|ASB_S); o->iclass |= PPC_DISA_SIMPLIFIED; }
+        else
+#endif
+        integer3("or", 'Z', ASB_A|ASB_S|ASB_B); break;           // orx
         case 01571: integer3("or.", 'Z', ASB_A|ASB_S|ASB_B); break;
         case 01626: integer3("divwu", 'X', DAB_D|DAB_A|DAB_B); break;        // divwux
         case 01626|OE: integer3("divwuo", 'X', DAB_D|DAB_A|DAB_B); break;

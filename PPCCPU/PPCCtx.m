@@ -126,6 +126,20 @@ struct TypeSet {
 
 - (void)analysisBeginsAt:(Address)entryPoint {
     //printf("analysisBeginsAt\n");
+    NSObject<HPSection> *ctors = [_file sectionNamed:@"ctors"];
+    if (ctors) {
+        for (Address addr = ctors.startAddress; addr < ctors.endAddress; addr += 4) {
+            [_file setType:Type_Int32 atVirtualAddress:addr forLength:4];
+            [_file setFormat:Format_Address forArgument:0 atVirtualAddress:addr];
+        }
+    }
+    NSObject<HPSection> *dtors = [_file sectionNamed:@"dtors"];
+    if (dtors) {
+        for (Address addr = dtors.startAddress; addr < dtors.endAddress; addr += 4) {
+            [_file setType:Type_Int32 atVirtualAddress:addr forLength:4];
+            [_file setFormat:Format_Address forArgument:0 atVirtualAddress:addr];
+        }
+    }
 }
 
 - (void)procedureAnalysisBeginsForProcedure:(NSObject<HPProcedure> *)procedure atEntryPoint:(Address)entryPoint {
@@ -195,7 +209,7 @@ static ByteType TypeForSize(u32 size)
         if (disasm->operand[0].type & DISASM_BUILD_REGISTER_INDEX_MASK(1) &&
             !strcmp(disasm->instruction.mnemonic, "stwu")) {
             stackDisp = (int32_t)disasm->operand[1].immediateValue;
-            [procedure setVariableName:@"BP" forDisplacement:disasm->operand[1].immediateValue];
+            [procedure setVariableName:@"BPpush" forDisplacement:disasm->operand[1].immediateValue];
         } else {
             int32_t imm = (int32_t)disasm->operand[1].immediateValue + stackDisp;
             if (imm < 0) {
@@ -209,6 +223,11 @@ static ByteType TypeForSize(u32 size)
                     [procedure setVariableName:[NSString stringWithFormat:@"arg_%X", imm] forDisplacement:disasm->operand[1].immediateValue];
             }
         }
+    } else if (disasm->instruction.userData & DISASM_PPC_INST_ADDI &&
+               disasm->operand[0].type & DISASM_BUILD_REGISTER_INDEX_MASK(1) &&
+               disasm->operand[1].type & DISASM_BUILD_REGISTER_INDEX_MASK(1)) {
+        stackDisp += (int32_t)disasm->operand[2].immediateValue;
+        [procedure setVariableName:@"BPpop" forDisplacement:disasm->operand[2].immediateValue];
     }
     
     // Load/store handling
@@ -501,16 +520,30 @@ static int GetRegisterIndex(DisasmOperandType type)
     
     if (operand->type & DISASM_OPERAND_CONSTANT_TYPE) {
         // Local variable
-        if ((format == Format_Default || format == Format_StackVariable) &&
-            disasm->instruction.userData & DISASM_PPC_INST_LOAD_STORE &&
-            disasm->operand[2].type & DISASM_BUILD_REGISTER_INDEX_MASK(1) && operandIndex == 1) {
-            NSObject<HPProcedure> *proc = [file procedureAt:disasm->virtualAddr];
-            if (proc) {
-                NSString *variableName = [proc variableNameForDisplacement:operand->immediateValue];
-                if (variableName) {
-                    [line appendVariableName:variableName withDisplacement:operand->immediateValue];
-                    [line setIsOperand:operandIndex startingAtIndex:0];
-                    return line;
+        if ((format == Format_Default || format == Format_StackVariable)) {
+            if ((operandIndex == 1 && disasm->instruction.userData & DISASM_PPC_INST_LOAD_STORE &&
+                 disasm->operand[2].type & DISASM_BUILD_REGISTER_INDEX_MASK(1)) ||
+                (operandIndex == 2 && disasm->instruction.userData & DISASM_PPC_INST_ADDI &&
+                 disasm->operand[1].type & DISASM_BUILD_REGISTER_INDEX_MASK(1))) {
+                NSObject<HPProcedure> *proc = [file procedureAt:disasm->virtualAddr];
+                if (proc) {
+                    NSString *variableName = [proc variableNameForDisplacement:operand->immediateValue];
+                    if (variableName) {
+                        [line appendVariableName:variableName withDisplacement:operand->immediateValue];
+                        [line setIsOperand:operandIndex startingAtIndex:0];
+                        return line;
+                    }
+                }
+            } else if (operandIndex == 2 && disasm->instruction.userData & DISASM_PPC_INST_SUBI &&
+                       disasm->operand[1].type & DISASM_BUILD_REGISTER_INDEX_MASK(1)) {
+                NSObject<HPProcedure> *proc = [file procedureAt:disasm->virtualAddr];
+                if (proc) {
+                    NSString *variableName = [proc variableNameForDisplacement:-operand->immediateValue];
+                    if (variableName) {
+                        [line appendVariableName:variableName withDisplacement:-operand->immediateValue];
+                        [line setIsOperand:operandIndex startingAtIndex:0];
+                        return line;
+                    }
                 }
             }
         }
