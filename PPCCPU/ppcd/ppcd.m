@@ -14,13 +14,14 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "Commondefs.h"
+#include "CommonDefs.h"
 #include "ppcd.h"
+#include "../PPCCPU.h"
 
 #define POWERPC_32      // Use generic 32-bit model
 //efine POWERPC_64      // Use generic 64-bit model
-//efine GEKKO           // Use Gekko (32-bit ISA)
-//efine BROADWAY        // Use Broadway (32-bit ISA)
+#define GEKKO           // Use Gekko (32-bit ISA)
+#define BROADWAY        // Use Broadway (32-bit ISA)
 
 #define SIMPLIFIED      // Allow simplified mnemonics
 //efine UPPERCASE       // Use upper case strings in output
@@ -77,13 +78,265 @@ static const char *regname[] = {
 #define REGA        (regname[DIS_RA])
 #define REGB        (regname[DIS_RB])
 
+// Hopper operand build helpers
+static void DISASM_PPC_BUILD_IMM_OP(int64_t imm, bool hex)
+{
+    DisasmOperand* op = &o->disasm->operand[o->opIdx++];
+    op->type = DISASM_OPERAND_CONSTANT_TYPE | DISASM_OPERAND_RELATIVE;
+    op->immediateValue = (imm);
+    if (hex)
+        op->userData[0] |= DISASM_PPC_OPER_IMM_HEX;
+}
+
+static void DISASM_PPC_BUILD_IMM_ABS_BDEST_OP(int64_t imm)
+{
+    Address addr = o->disasm->instruction.addressValue;
+    DisasmOperand* op = &o->disasm->operand[o->opIdx++];
+    op->type = DISASM_OPERAND_CONSTANT_TYPE | DISASM_OPERAND_ABSOLUTE;
+    op->immediateValue = addr;
+    op->isBranchDestination = 1;
+    op->userData[0] |= DISASM_PPC_OPER_IMM_HEX;
+}
+
+static void DISASM_PPC_BUILD_IMM_REL_BDEST_OP(int64_t imm)
+{
+    Address addr = o->disasm->instruction.addressValue;
+    DisasmOperand* op = &o->disasm->operand[o->opIdx++];
+    op->type = DISASM_OPERAND_CONSTANT_TYPE | DISASM_OPERAND_RELATIVE;
+    op->immediateValue = addr;
+    op->memory.displacement = (imm);
+    op->isBranchDestination = 1;
+    op->userData[0] |= DISASM_PPC_OPER_IMM_HEX;
+}
+
+static void DISASM_PPC_BUILD_CR_OP(int idx, bool write)
+{
+    DisasmOperand* op = &o->disasm->operand[o->opIdx++];
+    op->type = DISASM_OPERAND_REGISTER_TYPE;
+    op->type |= DISASM_BUILD_REGISTER_CLS_MASK(RegClass_PPC_CondReg);
+    op->type |= DISASM_BUILD_REGISTER_INDEX_MASK((idx));
+    if (write) {
+        op->accessMode = DISASM_ACCESS_WRITE;
+        o->disasm->implicitlyWrittenRegisters[RegClass_PPC_CondReg] |= (uint32_t)DISASM_BUILD_REGISTER_INDEX_MASK((idx));
+    } else {
+        op->accessMode = DISASM_ACCESS_READ;
+        o->disasm->implicitlyReadRegisters[RegClass_PPC_CondReg] |= (uint32_t)DISASM_BUILD_REGISTER_INDEX_MASK((idx));
+    }
+}
+
+static void DISASM_PPC_BUILD_GPR_OP(int idx, bool write)
+{
+    DisasmOperand* op = &o->disasm->operand[o->opIdx++];
+    op->type = DISASM_OPERAND_REGISTER_TYPE;
+    op->type |= DISASM_BUILD_REGISTER_CLS_MASK(RegClass_GeneralPurposeRegister);
+    op->type |= DISASM_BUILD_REGISTER_INDEX_MASK((idx));
+    if (write) {
+        op->accessMode = DISASM_ACCESS_WRITE;
+        o->disasm->implicitlyWrittenRegisters[RegClass_GeneralPurposeRegister] |= (uint32_t)DISASM_BUILD_REGISTER_INDEX_MASK((idx));
+        if (o->lisArr) o->lisArr[idx] = ~0;
+    } else {
+        op->accessMode = DISASM_ACCESS_READ;
+        o->disasm->implicitlyReadRegisters[RegClass_GeneralPurposeRegister] |= (uint32_t)DISASM_BUILD_REGISTER_INDEX_MASK((idx));
+    }
+}
+
+static void DISASM_PPC_BUILD_FPR_OP(int idx, bool write)
+{
+    DisasmOperand* op = &o->disasm->operand[o->opIdx++];
+    op->type = DISASM_OPERAND_REGISTER_TYPE;
+    op->type |= DISASM_BUILD_REGISTER_CLS_MASK(RegClass_FPRegister);
+    op->type |= DISASM_BUILD_REGISTER_INDEX_MASK((idx));
+    if (write) {
+        op->accessMode = DISASM_ACCESS_WRITE;
+        o->disasm->implicitlyWrittenRegisters[RegClass_FPRegister] |= (uint32_t)DISASM_BUILD_REGISTER_INDEX_MASK((idx));
+    } else {
+        op->accessMode = DISASM_ACCESS_READ;
+        o->disasm->implicitlyReadRegisters[RegClass_FPRegister] |= (uint32_t)DISASM_BUILD_REGISTER_INDEX_MASK((idx));
+    }
+}
+
+static const char *spr_name(int n)
+{
+    static char def[8];
+    
+    switch(n)
+    {
+            // General architecture special-purpose registers.
+        case 1: return "XER";
+        case 8: return "LR";
+        case 9: return "CTR";
+        case 18: return "DSISR";
+        case 19: return "DAR";
+        case 22: return "DEC";
+        case 25: return "SDR1";
+        case 26: return "SRR0";
+        case 27: return "SRR1";
+        case 272: return "SPRG0";
+        case 273: return "SPRG1";
+        case 274: return "SPRG2";
+        case 275: return "SPRG3";
+#ifdef  POWERPC_64
+        case 280: return "ASR";
+#endif
+        case 284: return "TBL";
+        case 285: return "TBU";
+        case 287: return "PVR";
+        case 528: return "IBAT0U";
+        case 529: return "IBAT0L";
+        case 530: return "IBAT1U";
+        case 531: return "IBAT1L";
+        case 532: return "IBAT2U";
+        case 533: return "IBAT2L";
+        case 534: return "IBAT3U";
+        case 535: return "IBAT3L";
+        case 536: return "DBAT0U";
+        case 537: return "DBAT0L";
+        case 538: return "DBAT1U";
+        case 539: return "DBAT1L";
+        case 540: return "DBAT2U";
+        case 541: return "DBAT2L";
+        case 542: return "DBAT3U";
+        case 543: return "DBAT3L";
+            
+            // Optional registers.
+#if !defined(GEKKO) && !defined(BROADWAY)
+        case 282: return "EAR";
+        case 1013: return "DABR";
+        case 1022: return "FPECR";
+        case 1023: return "PIR";
+#endif
+            
+            // Gekko-specific SPRs
+#ifdef GEKKO
+        case 282: return "EAR";
+        case 912: return "GQR0";
+        case 913: return "GQR1";
+        case 914: return "GQR2";
+        case 915: return "GQR3";
+        case 916: return "GQR4";
+        case 917: return "GQR5";
+        case 918: return "GQR6";
+        case 919: return "GQR7";
+        case 920: return "HID2";
+        case 921: return "WPAR";
+        case 922: return "DMAU";
+        case 923: return "DMAL";
+        case 936: return "UMMCR0";
+        case 940: return "UMMCR1";
+        case 937: return "UPMC1";
+        case 938: return "UPMC2";
+        case 939: return "USIA";
+        case 941: return "UPMC3";
+        case 942: return "UPMC4";
+        case 943: return "USDA";
+        case 952: return "MMCR0";
+        case 953: return "PMC1";
+        case 954: return "PMC2";
+        case 955: return "SIA";
+        case 956: return "MMCR1";
+        case 957: return "PMC3";
+        case 958: return "PMC4";
+        case 959: return "SDA";
+        case 1008: return "HID0";
+        case 1009: return "HID1";
+        case 1010: return "IABR";
+        case 1013: return "DABR";
+        case 1017: return "L2CR";
+        case 1019: return "ICTC";
+        case 1020: return "THRM1";
+        case 1021: return "THRM2";
+        case 1022: return "THRM3";
+#endif
+    }
+    
+    sprintf(def, "%u", n);
+    return def;
+}
+
+static const char *tbr_name(int n)
+{
+    static char def[8];
+    
+    switch(n)
+    {
+            // General architecture time-base registers.
+        case 268: return "TBL";
+        case 269: return "TBU";
+    }
+    
+    sprintf(def, "%u", n);
+    return def;
+}
+
+static void DISASM_PPC_BUILD_SPR_OP(int idx, bool write)
+{
+    DisasmOperand* op = &o->disasm->operand[o->opIdx++];
+    op->type = DISASM_OPERAND_OTHER;
+    op->type |= DISASM_BUILD_REGISTER_CLS_MASK(RegClass_SPRegister);
+    strcpy(op->userString, spr_name(idx));
+    if (write) {
+        op->accessMode = DISASM_ACCESS_WRITE;
+    } else {
+        op->accessMode = DISASM_ACCESS_READ;
+    }
+}
+
+static void DISASM_PPC_BUILD_TBR_OP(int idx, bool write)
+{
+    DisasmOperand* op = &o->disasm->operand[o->opIdx++];
+    op->type = DISASM_OPERAND_OTHER;
+    op->type |= DISASM_BUILD_REGISTER_CLS_MASK(RegClass_TBRegister);
+    strcpy(op->userString, tbr_name(idx));
+    if (write) {
+        op->accessMode = DISASM_ACCESS_WRITE;
+    } else {
+        op->accessMode = DISASM_ACCESS_READ;
+    }
+}
+
+#define MASK32(b, e) \
+{ \
+u32 mask = ((u32)0xffffffff >> (b)) ^ (((e) >= 31) ? 0 : ((u32)0xffffffff) >> ((e) + 1)); \
+o->target = ((b) > (e)) ? (~mask) : (mask); \
+}
+
+#define MASK64(b, e) \
+{ \
+u64 mask = ((u64)0xffffffffffffffff >> (b)) ^ (((e) >= 63) ? 0 : ((u64)0xffffffffffffffff) >> ((e) + 1)); \
+o->target = ((b) > (e)) ? (~mask) : (mask); \
+}
+
+static void clear_mnemonic()
+{
+    o->mnemonic[0] = '\0';
+    o->disasm->instruction.mnemonic[0] = '\0';
+}
+
+static void copy_mnemonic(const char* n)
+{
+    strncpy(o->mnemonic, n, sizeof(o->mnemonic));
+    strncpy(o->disasm->instruction.mnemonic, n, sizeof(o->disasm->instruction.mnemonic));
+}
+
+static void format_mnemonic(const char* f, ...)
+{
+    va_list ap;
+    va_start(ap, f);
+    vsprintf(o->mnemonic, f, ap);
+    va_end(ap);
+    va_start(ap, f);
+    vsprintf(o->disasm->instruction.mnemonic, f, ap);
+    va_end(ap);
+}
+
 // Illegal instruction.
 static void ill(void)
 {
 #if 1
-    o->mnemonic[0] = o->operands[0] = '\0';
+    clear_mnemonic();
+    o->operands[0] = '\0';
 #else
-    strcpy(o->mnemonic, ".word");
+    copy_mnemonic(".word");
     sprintf(o->operands, HEX1 "%08X" HEX2, Instr);
 #endif
     o->iclass = PPC_DISA_ILLEGAL;
@@ -108,7 +361,7 @@ static void put(const char * mnem, u32 mask, u32 chkval, int iclass)
 {
     if( (Instr & mask) != chkval ) { ill(); return; }
     o->iclass |= iclass;
-    strncpy(o->mnemonic, mnem, sizeof(o->mnemonic));
+    copy_mnemonic(mnem);
 }
 static void put2(const char * mnem, u32 mask){
     put(mnem, mask, 0, PPC_DISA_OTHER);
@@ -134,17 +387,39 @@ static void trap(int L, int imm)
 #ifdef  SIMPLIFIED
     if(t_cond[rd] != NULL)
     {
-        sprintf(o->mnemonic, "t%c%s%c", t_mode[L & 1], t_cond[rd], imm ? 'i' : 0);
-        if(imm) sprintf(o->operands, "%s" COMMA "%s", REGA, simm(DIS_SIMM, 0, s));
-        else sprintf(o->operands, "%s" COMMA "%s", REGA, REGB);
+        format_mnemonic("t%c%s%c", t_mode[L & 1], t_cond[rd], imm ? 'i' : 0);
+        if(imm)
+        {
+            sprintf(o->operands, "%s" COMMA "%s", REGA, simm(DIS_SIMM, 0, s));
+            DISASM_PPC_BUILD_GPR_OP(DIS_RA, false);
+            DISASM_PPC_BUILD_IMM_OP(DIS_SIMM, false);
+        }
+        else
+        {
+            sprintf(o->operands, "%s" COMMA "%s", REGA, REGB);
+            DISASM_PPC_BUILD_GPR_OP(DIS_RA, false);
+            DISASM_PPC_BUILD_GPR_OP(DIS_RB, false);
+        }
         o->iclass |= PPC_DISA_SIMPLIFIED;
     }
     else
 #endif
     {
-        sprintf(o->mnemonic, "t%c%c", t_mode[L & 1], imm ? 'i' : 0);
-        if(imm) sprintf(o->operands, "%i" COMMA "%s" COMMA "%s", rd, REGA, simm(DIS_SIMM, 0, s));
-        else sprintf(o->operands, "%i" COMMA "%s" COMMA "%s", rd, REGA, REGB);
+        format_mnemonic("t%c%c", t_mode[L & 1], imm ? 'i' : 0);
+        if(imm)
+        {
+            sprintf(o->operands, "%i" COMMA "%s" COMMA "%s", rd, REGA, simm(DIS_SIMM, 0, s));
+            DISASM_PPC_BUILD_GPR_OP(rd, true);
+            DISASM_PPC_BUILD_GPR_OP(DIS_RA, false);
+            DISASM_PPC_BUILD_IMM_OP(DIS_SIMM, false);
+        }
+        else
+        {
+            sprintf(o->operands, "%i" COMMA "%s" COMMA "%s", rd, REGA, REGB);
+            DISASM_PPC_BUILD_GPR_OP(rd, true);
+            DISASM_PPC_BUILD_GPR_OP(DIS_RA, false);
+            DISASM_PPC_BUILD_GPR_OP(DIS_RB, false);
+        }
     }
     if(L) o->iclass |= PPC_DISA_64;
     o->r[1] = DIS_RA; if(!imm) o->r[2] = DIS_RB;
@@ -192,69 +467,127 @@ static void integer(const char *mnem, char form, int dab, int hex, int s, int cr
 {
     char * ptr = o->operands;
     int rd = DIS_RD, ra = DIS_RA, rb = DIS_RB;
-    strncpy(o->mnemonic, mnem, sizeof(o->mnemonic));
-    if(crfD) ptr += sprintf(ptr, "%s%i" COMMA, crname, rd >> 2); // CMP only
-    if(L) ptr += sprintf(ptr, "%i" COMMA, rd & 1);           // CMP only
+    copy_mnemonic(mnem);
+    if(crfD)
+    {
+        ptr += sprintf(ptr, "%s%i" COMMA, crname, rd >> 2); // CMP only
+        DISASM_PPC_BUILD_CR_OP(rd >> 2, true);
+    }
+    if(L)
+    {
+        ptr += sprintf(ptr, "%i" COMMA, rd & 1);           // CMP only
+        DISASM_PPC_BUILD_IMM_OP(rd & 1, hex);
+    }
     if(form == 'D')
     {
-        if(dab & DAB_D) ptr += sprintf(ptr, "%s", REGD);
+        if(dab & DAB_D)
+        {
+            ptr += sprintf(ptr, "%s", REGD);
+            DISASM_PPC_BUILD_GPR_OP(rd, true);
+        }
         if(dab & DAB_A)
         {
             if(dab & DAB_D) ptr += sprintf(ptr, "%s", COMMA);
             ptr += sprintf(ptr, "%s", REGA);
+            DISASM_PPC_BUILD_GPR_OP(ra, false);
         }
-        if(imm) ptr += sprintf(ptr, COMMA "%s", simm(s ? DIS_SIMM : DIS_UIMM, hex, s));
+        if(imm)
+        {
+            ptr += sprintf(ptr, COMMA "%s", simm(s ? DIS_SIMM : DIS_UIMM, hex, s));
+            DISASM_PPC_BUILD_IMM_OP(s ? DIS_SIMM : DIS_UIMM, hex);
+        }
     }
     else if(form == 'S')
     {
-        if(dab & ASB_A) ptr += sprintf(ptr, "%s", REGA);
+        s32 thisLis = ~0;
+        if (o->lisArr && !strcmp(mnem, "ori"))
+            thisLis = o->lisArr[DIS_RS];
+            
+        if(dab & ASB_A)
+        {
+            ptr += sprintf(ptr, "%s", REGA);
+            DISASM_PPC_BUILD_GPR_OP(ra, true);
+        }
         if(dab & ASB_S)
         {
             if(dab & ASB_A) ptr += sprintf(ptr, "%s", COMMA);
             ptr += sprintf(ptr, "%s", REGS);
+            DISASM_PPC_BUILD_GPR_OP(DIS_RS, false);
         }
-        if(imm) ptr += sprintf(ptr, COMMA "%s", simm(s ? DIS_SIMM : DIS_UIMM, hex, s));
+        if(imm)
+        {
+            ptr += sprintf(ptr, COMMA "%s", simm(s ? DIS_SIMM : DIS_UIMM, hex, s));
+            DISASM_PPC_BUILD_IMM_OP(s ? DIS_SIMM : DIS_UIMM, hex);
+        }
+        
+        if (thisLis != ~0)
+        {
+            DisasmOperand* op = &o->disasm->operand[o->opIdx-1];
+            op->userData[0] |= DISASM_PPC_OPER_LIS_ADDI;
+            op->userData[0] |= DISASM_PPC_OPER_IMM_HEX;
+            op->userData[1] = thisLis | op->immediateValue;
+            o->disasm->instruction.addressValue = op->userData[1];
+            o->lisArr[DIS_RA] = (s32)op->userData[1];
+        }
     }
     else if(form == 'X')    // DAB
     {
-        if(dab & DAB_D) ptr += sprintf(ptr, "%s", REGD);
+        if(dab & DAB_D)
+        {
+            ptr += sprintf(ptr, "%s", REGD);
+            DISASM_PPC_BUILD_GPR_OP(rd, true);
+        }
         if(dab & DAB_A)
         {
             if(dab & DAB_D) ptr += sprintf(ptr, "%s", COMMA);
             ptr += sprintf(ptr, "%s", REGA);
+            DISASM_PPC_BUILD_GPR_OP(ra, false);
         }
         if(dab & DAB_B)
         {
             if(dab & (DAB_D|DAB_A)) ptr += sprintf(ptr, "%s", COMMA);
             ptr += sprintf(ptr, "%s", REGB);
+            DISASM_PPC_BUILD_GPR_OP(rb, false);
         }
     }
     else if(form == 'F')    // FPU DAB
     {
-        if(dab & DAB_D) ptr += sprintf(ptr, "%s%i", fregname, rd);
+        if(dab & DAB_D)
+        {
+            ptr += sprintf(ptr, "%s%i", fregname, rd);
+            DISASM_PPC_BUILD_FPR_OP(rd, true);
+        }
         if(dab & DAB_A)
         {
             if(dab & DAB_D) ptr += sprintf(ptr, "%s", COMMA);
             ptr += sprintf(ptr, "%s", REGA);
+            DISASM_PPC_BUILD_GPR_OP(ra, false);
         }
         if(dab & DAB_B)
         {
             if(dab & (DAB_D|DAB_A)) ptr += sprintf(ptr, "%s", COMMA);
             ptr += sprintf(ptr, "%s", REGB);
+            DISASM_PPC_BUILD_GPR_OP(rb, false);
         }
     }
     else if(form == 'Z')    // ASB
     {
-        if(dab & ASB_A) ptr += sprintf(ptr, "%s", REGA);
+        if(dab & ASB_A)
+        {
+            ptr += sprintf(ptr, "%s", REGA);
+            DISASM_PPC_BUILD_GPR_OP(ra, true);
+        }
         if(dab & ASB_S)
         {
             if(dab & ASB_A) ptr += sprintf(ptr, "%s", COMMA);
             ptr += sprintf(ptr, "%s", REGS);
+            DISASM_PPC_BUILD_GPR_OP(DIS_RS, false);
         }
         if(dab & ASB_B)
         {
             if(dab & (ASB_A|ASB_S)) ptr += sprintf(ptr, "%s", COMMA);
             ptr += sprintf(ptr, "%s", REGB);
+            DISASM_PPC_BUILD_GPR_OP(rb, false);
         }
     }
     else { ill(); return; }
@@ -318,12 +651,16 @@ static void addi(const char *suffix)
     if( (suffix[0] == '\0') && (DIS_RA == 0) )  // Load immediate
     {
         integer5("li", 'D', DAB_D, 0, 1);
+        if (o->lisArr)
+            o->lisArr[DIS_RD] = DIS_SIMM;
         o->iclass |= PPC_DISA_SIMPLIFIED;
         return;
     }
     if( (suffix[0] == 's') && (DIS_RA == 0) )   // Load address HI
     {
         integer5("lis", 'D', DAB_D, 1, 0);
+        if (o->lisArr)
+            o->lisArr[DIS_RD] = DIS_SIMM << 16;
         o->iclass |= PPC_DISA_SIMPLIFIED;
         return;
     }
@@ -335,13 +672,51 @@ static void addi(const char *suffix)
         u16 value = (u16)(~(DIS_UIMM) + 1);
         Instr = (Instr & ~0xFFFF) | value;
 
+        s32 thisLis = o->lisArr ? o->lisArr[DIS_RA] : ~0;
         integer5(mnem, 'D', DAB_D|DAB_A, 0, 1);
         o->iclass |= PPC_DISA_SIMPLIFIED;
+        o->disasm->instruction.userData |= DISASM_PPC_INST_SUBI;
+        
+        DisasmOperand* op = &o->disasm->operand[1];
+        op->type = DISASM_OPERAND_MEMORY_TYPE;
+        op->type |= DISASM_BUILD_REGISTER_CLS_MASK(RegClass_GeneralPurposeRegister);
+        op->type |= DISASM_BUILD_REGISTER_INDEX_MASK(DIS_RA);
+        op->memory.baseRegistersMask = DISASM_BUILD_REGISTER_INDEX_MASK(DIS_RA);
+        op->memory.displacement = o->disasm->operand[2].immediateValue;
+        
+        if (thisLis != ~0)
+        {
+            DisasmOperand* op = &o->disasm->operand[o->opIdx-1];
+            op->userData[0] |= DISASM_PPC_OPER_LIS_ADDI;
+            op->userData[0] |= DISASM_PPC_OPER_IMM_HEX;
+            op->userData[1] = thisLis - op->immediateValue;
+            o->disasm->instruction.addressValue = op->userData[1];
+            o->lisArr[DIS_RD] = op->userData[1];
+        }
     }
     else
     {
         sprintf(mnem, "addi%s", suffix);
+        s32 thisLis = o->lisArr ? o->lisArr[DIS_RA] : ~0;
         integer5(mnem, 'D', DAB_D|DAB_A, 0, 0);
+        o->disasm->instruction.userData |= DISASM_PPC_INST_ADDI;
+        
+        DisasmOperand* op = &o->disasm->operand[1];
+        op->type = DISASM_OPERAND_MEMORY_TYPE;
+        op->type |= DISASM_BUILD_REGISTER_CLS_MASK(RegClass_GeneralPurposeRegister);
+        op->type |= DISASM_BUILD_REGISTER_INDEX_MASK(DIS_RA);
+        op->memory.baseRegistersMask = DISASM_BUILD_REGISTER_INDEX_MASK(DIS_RA);
+        op->memory.displacement = o->disasm->operand[2].immediateValue;
+        
+        if (thisLis != ~0)
+        {
+            DisasmOperand* op = &o->disasm->operand[o->opIdx-1];
+            op->userData[0] |= DISASM_PPC_OPER_LIS_ADDI;
+            op->userData[0] |= DISASM_PPC_OPER_IMM_HEX;
+            op->userData[1] = thisLis + op->immediateValue;
+            o->disasm->instruction.addressValue = op->userData[1];
+            o->lisArr[DIS_RD] = op->userData[1];
+        }
     }
 #else
     sprintf(mnem, "addi%s", suffix);
@@ -355,6 +730,18 @@ static const char *b_opt[4] = { "", "l", "a", "la" };
 // Branch condition code: 4 * BO[1] + (BI & 3)
 static const char * b_cond[8] = {
  "ge", "le", "ne", "ns", "lt", "gt", "eq", "so"
+};
+
+// Branch condition Hopper flags
+static const DisasmBranchType b_hcond[8] = {
+    DISASM_BRANCH_JNL,
+    DISASM_BRANCH_JNG,
+    DISASM_BRANCH_JNE,
+    DISASM_BRANCH_JNO,
+    DISASM_BRANCH_JL,
+    DISASM_BRANCH_JG,
+    DISASM_BRANCH_JE,
+    DISASM_BRANCH_JO
 };
 
 // Branch on CTR code: BO[0..3]
@@ -389,9 +776,16 @@ static char *place_target(char *ptr, int comma)
 // Disp:0 - branch by register (L:1 for LR, L:0 for CTR).
 static void bcx(int Disp, int L)
 {
+    o->disasm->instruction.branchType = DISASM_BRANCH_JMP;
+
     u64 bd = 0;
     int bo = DIS_RD, bi = DIS_RA;
     const char *r = Disp ? "" : (L ? "lr" : "ctr");
+    o->disasm->instruction.userData |=
+        Disp ? 0 : (L ? DISASM_PPC_INST_BRANCH_TO_LINK_REGISTER :
+                        DISASM_PPC_INST_BRANCH_TO_COUNT_REGISTER);
+    if (!Disp && L)
+        o->disasm->instruction.branchType = DISASM_BRANCH_RET;
     char *ptr = o->operands;
 
     if( DIS_RB && !Disp ) { ill(); return; }
@@ -408,6 +802,12 @@ static void bcx(int Disp, int L)
         o->target = (AA ? 0 : DIS_PC) + bd;
     }
     else o->target = 0;
+    o->disasm->instruction.addressValue = o->target;
+    if (LK)
+    {
+        o->disasm->instruction.userData |= DISASM_PPC_INST_BRANCH_SET_LINK_REGISTER;
+        o->disasm->instruction.branchType = DISASM_BRANCH_CALL;
+    }
 
     // Calculate branch prediction hint
     char y = (bo & 1) ^ ((((s64)bd < 0) && Disp) ? 1 : 0);
@@ -418,8 +818,15 @@ static void bcx(int Disp, int L)
         if(bo & 16)         // Branch always                            // BO[0]
         {
 #ifdef  SIMPLIFIED
-            sprintf(o->mnemonic, "b%s%s", r, b_opt[Disp ? AALK : LK]);
-            if(Disp) ptr = place_target(ptr, 0);
+            format_mnemonic("b%s%s", r, b_opt[Disp ? AALK : LK]);
+            if(Disp)
+            {
+                ptr = place_target(ptr, 0);
+                if (AA)
+                    DISASM_PPC_BUILD_IMM_ABS_BDEST_OP(bd);
+                else
+                    DISASM_PPC_BUILD_IMM_REL_BDEST_OP(bd);
+            }
             o->iclass |= PPC_DISA_SIMPLIFIED;
             return;
 #endif  // SIMPLIFIED
@@ -431,9 +838,21 @@ static void bcx(int Disp, int L)
             const char *cond = b_cond[((bo & 8) >> 1) | (bi & 3)];
             if(cond != NULL)                                            // BO[1]
             {
-                sprintf(o->mnemonic, "b%s%s%s%c", cond, r, b_opt[Disp ? AALK : LK], y);
-                if(bi >= 4) ptr += sprintf(ptr, "%s%i", crname, bi >> 2);
-                if(Disp) ptr = place_target(ptr, bi >= 4);
+                format_mnemonic("b%s%s%s%c", cond, r, b_opt[Disp ? AALK : LK], y);
+                o->disasm->instruction.branchType = b_hcond[((bo & 8) >> 1) | (bi & 3)];
+                if(bi >= 4)
+                {
+                    ptr += sprintf(ptr, "%s%i", crname, bi >> 2);
+                    DISASM_PPC_BUILD_CR_OP(bi >> 2, true);
+                }
+                if(Disp)
+                {
+                    ptr = place_target(ptr, bi >= 4);
+                    if (AA)
+                        DISASM_PPC_BUILD_IMM_ABS_BDEST_OP(bd);
+                    else
+                        DISASM_PPC_BUILD_IMM_REL_BDEST_OP(bd);
+                }
                 o->iclass |= PPC_DISA_SIMPLIFIED;
                 return;
             }
@@ -447,9 +866,20 @@ static void bcx(int Disp, int L)
 #ifdef  SIMPLIFIED
         if(b_ctr[bo >> 1])
         {
-            sprintf(o->mnemonic, "b%s%s%s%c", b_ctr[bo >> 1], r, b_opt[Disp ? AALK : LK], y);
-            if(!(bo & 16)) ptr += sprintf(ptr, "%i", bi);
-            if(Disp) ptr = place_target(ptr, !(bo & 16));
+            format_mnemonic("b%s%s%s%c", b_ctr[bo >> 1], r, b_opt[Disp ? AALK : LK], y);
+            if(!(bo & 16))
+            {
+                ptr += sprintf(ptr, "%i", bi);
+                DISASM_PPC_BUILD_IMM_OP(bi, false);
+            }
+            if(Disp)
+            {
+                ptr = place_target(ptr, !(bo & 16));
+                if (AA)
+                    DISASM_PPC_BUILD_IMM_ABS_BDEST_OP(bd);
+                else
+                    DISASM_PPC_BUILD_IMM_REL_BDEST_OP(bd);
+            }
             o->iclass |= PPC_DISA_SIMPLIFIED;
             return;
         }
@@ -457,9 +887,18 @@ static void bcx(int Disp, int L)
     }
 
     // Not simplified standard form
-    sprintf(o->mnemonic, "bc%s%s", r, b_opt[Disp ? AALK : LK]);
+    format_mnemonic("bc%s%s", r, b_opt[Disp ? AALK : LK]);
     ptr += sprintf(ptr, "%i" COMMA "%i", bo, bi);
-    if(Disp) ptr = place_target(ptr, 1);
+    DISASM_PPC_BUILD_IMM_OP(bo, false);
+    DISASM_PPC_BUILD_IMM_OP(bi, false);
+    if(Disp)
+    {
+        ptr = place_target(ptr, 1);
+        if (AA)
+            DISASM_PPC_BUILD_IMM_ABS_BDEST_OP(bd);
+        else
+            DISASM_PPC_BUILD_IMM_REL_BDEST_OP(bd);
+    }
 }
 
 // Branch unconditional
@@ -469,18 +908,31 @@ static void bx(void)
     u64 bd = Instr & 0x03fffffc;
     if(bd & 0x02000000) bd |= 0xfffffffffc000000;
     o->target = (AA ? 0 : DIS_PC) + bd;
- 
+    o->disasm->instruction.addressValue = o->target;
+    o->disasm->instruction.branchType = DISASM_BRANCH_JMP;
+    if (LK)
+    {
+        o->disasm->instruction.userData |= DISASM_PPC_INST_BRANCH_SET_LINK_REGISTER;
+        o->disasm->instruction.branchType = DISASM_BRANCH_CALL;
+    }
+
     o->iclass |= PPC_DISA_BRANCH;
-    sprintf(o->mnemonic, "b%s", b_opt[AALK]);
+    format_mnemonic("b%s", b_opt[AALK]);
     place_target(o->operands, 0);
+    if (AA)
+        DISASM_PPC_BUILD_IMM_ABS_BDEST_OP(bd);
+    else
+        DISASM_PPC_BUILD_IMM_REL_BDEST_OP(bd);
 }
 
 // Move CR field
 static void mcrf(void)
 {
     if(Instr & 0x63f801) { ill(); return; }
-    strncpy(o->mnemonic, "mcrf", sizeof(o->mnemonic));
+    copy_mnemonic("mcrf");
     sprintf(o->operands, "%s%lu" COMMA "%s%lu", crname, DIS_RD >> 2, crname, DIS_RA >> 2);
+    DISASM_PPC_BUILD_CR_OP(DIS_RD >> 2, true);
+    DISASM_PPC_BUILD_CR_OP(DIS_RA >> 2, false);
 }
 
 // CR logic operations
@@ -495,24 +947,30 @@ static void crop(const char *name, const char *simp, int ddd, int daa)
     {
         if( (crfD == crfA) && ddd )
         {
-            sprintf(o->mnemonic, "cr%s", simp);
+            format_mnemonic("cr%s", simp);
             sprintf(o->operands, "%i", crfD);
+            DISASM_PPC_BUILD_CR_OP(crfD, true);
             o->r[0] = crfD;
             o->iclass |= PPC_DISA_SIMPLIFIED;
             return;
         }
         if( daa )
         {
-            sprintf(o->mnemonic, "cr%s", simp);
+            format_mnemonic("cr%s", simp);
             sprintf(o->operands, "%i" COMMA "%i", crfD, crfA);
+            DISASM_PPC_BUILD_CR_OP(crfD, true);
+            DISASM_PPC_BUILD_CR_OP(crfA, false);
             o->r[0] = crfD; o->r[1] = crfA;
             o->iclass |= PPC_DISA_SIMPLIFIED;
             return;
         }
     }
 #endif
-    sprintf(o->mnemonic, "cr%s", name);
+    format_mnemonic("cr%s", name);
     sprintf(o->operands, "%i" COMMA "%i" COMMA "%i", crfD, crfA, crfB);
+    DISASM_PPC_BUILD_CR_OP(crfD, true);
+    DISASM_PPC_BUILD_CR_OP(crfA, false);
+    DISASM_PPC_BUILD_CR_OP(crfB, false);
     o->r[0] = crfD; o->r[1] = crfA; o->r[2] = crfB;
 }
 static void crop1(const char *name){
@@ -525,17 +983,14 @@ static void crop3(const char *name, const char *simp, int ddd){
     crop(name,simp,ddd,0);
 }
 
-
-#define MASK32(b, e) \
+#define DISASM_PPC_ADD_RLWINM_HELPER \
+if (!rb) \
 { \
-    u32 mask = ((u32)0xffffffff >> (b)) ^ (((e) >= 31) ? 0 : ((u32)0xffffffff) >> ((e) + 1)); \
-    o->target = ((b) > (e)) ? (~mask) : (mask); \
-}
-
-#define MASK64(b, e) \
-{ \
-    u64 mask = ((u64)0xffffffffffffffff >> (b)) ^ (((e) >= 63) ? 0 : ((u64)0xffffffffffffffff) >> ((e) + 1)); \
-    o->target = ((b) > (e)) ? (~mask) : (mask); \
+    DisasmOperand* op = &o->disasm->operand[o->opIdx-1]; \
+    op->userData[0] |= DISASM_PPC_OPER_RLWIMI; \
+    op->userData[1] = DIS_RB; \
+    op->userData[2] = mb; \
+    op->userData[3] = me; \
 }
 
 // Rotate left word.
@@ -543,12 +998,178 @@ static void rlw(const char *name, int rb, int ins)
 {
     int mb = DIS_MB, me = DIS_ME;
     char * ptr = o->operands;
-    sprintf(o->mnemonic, "rlw%s%c", name, Rc ? '.' : '\0');
-    ptr += sprintf(ptr, "%s" COMMA "%s" COMMA, REGA, REGS);
-    if(rb) ptr += sprintf(ptr, "%s" COMMA, REGB);
-    else   ptr += sprintf(ptr, "%lu" COMMA, DIS_RB);     // sh
-    ptr += sprintf(ptr, "%i" COMMA "%i", mb, me);
+#ifdef SIMPLIFIED
+    if (!rb && !ins)
+    {
+        // rlwinm
+        if (DIS_RB == 0)
+        {
+            if (me == 31)
+            {
+                // clrlwi
+                format_mnemonic("clrlwi%c", Rc ? '.' : '\0');
+                ptr += sprintf(ptr, "%s" COMMA "%s" COMMA "%d", REGA, REGS, mb);
+                DISASM_PPC_BUILD_GPR_OP(DIS_RA, true);
+                DISASM_PPC_BUILD_GPR_OP(DIS_RS, false);
+                DISASM_PPC_BUILD_IMM_OP(mb, false);
+                DISASM_PPC_ADD_RLWINM_HELPER
+                
+                o->r[0] = DIS_RA;
+                o->r[1] = DIS_RS;
+                o->r[2] = mb;
+                o->iclass |= PPC_DISA_INTEGER | PPC_DISA_SIMPLIFIED;
+                return;
+            }
+            else if (mb == 0)
+            {
+                // clrrwi
+                format_mnemonic("clrrwi%c", Rc ? '.' : '\0');
+                ptr += sprintf(ptr, "%s" COMMA "%s" COMMA "%d", REGA, REGS, 31 - me);
+                DISASM_PPC_BUILD_GPR_OP(DIS_RA, true);
+                DISASM_PPC_BUILD_GPR_OP(DIS_RS, false);
+                DISASM_PPC_BUILD_IMM_OP(31 - me, false);
+                DISASM_PPC_ADD_RLWINM_HELPER
+                
+                o->r[0] = DIS_RA;
+                o->r[1] = DIS_RS;
+                o->r[2] = 31 - me;
+                o->iclass |= PPC_DISA_INTEGER | PPC_DISA_SIMPLIFIED;
+                return;
+            }
+        }
+        
+        if (mb == 0 && me == 31)
+        {
+            if (me + DIS_RB > 31)
+            {
+                // rotrwi
+                format_mnemonic("rotrwi%c", Rc ? '.' : '\0');
+                ptr += sprintf(ptr, "%s" COMMA "%s" COMMA "%lu", REGA, REGS, 32 - DIS_RB);
+                DISASM_PPC_BUILD_GPR_OP(DIS_RA, true);
+                DISASM_PPC_BUILD_GPR_OP(DIS_RS, false);
+                DISASM_PPC_BUILD_IMM_OP(32 - DIS_RB, false);
+                DISASM_PPC_ADD_RLWINM_HELPER
+                
+                o->r[0] = DIS_RA;
+                o->r[1] = DIS_RS;
+                o->r[2] = 32 - DIS_RB;
+                o->iclass |= PPC_DISA_INTEGER | PPC_DISA_SIMPLIFIED;
+            }
+            else
+            {
+                // rotlwi
+                format_mnemonic("rotlwi%c", Rc ? '.' : '\0');
+                ptr += sprintf(ptr, "%s" COMMA "%s" COMMA "%lu", REGA, REGS, DIS_RB);
+                DISASM_PPC_BUILD_GPR_OP(DIS_RA, true);
+                DISASM_PPC_BUILD_GPR_OP(DIS_RS, false);
+                DISASM_PPC_BUILD_IMM_OP(DIS_RB, false);
+                DISASM_PPC_ADD_RLWINM_HELPER
+                
+                o->r[0] = DIS_RA;
+                o->r[1] = DIS_RS;
+                o->r[2] = DIS_RB;
+                o->iclass |= PPC_DISA_INTEGER | PPC_DISA_SIMPLIFIED;
+            }
+            return;
+        }
+        
+        if (mb == 0 && DIS_RB == 31 - me)
+        {
+            // slwi
+            format_mnemonic("slwi%c", Rc ? '.' : '\0');
+            ptr += sprintf(ptr, "%s" COMMA "%s" COMMA "%lu", REGA, REGS, DIS_RB);
+            DISASM_PPC_BUILD_GPR_OP(DIS_RA, true);
+            DISASM_PPC_BUILD_GPR_OP(DIS_RS, false);
+            DISASM_PPC_BUILD_IMM_OP(DIS_RB, false);
+            DISASM_PPC_ADD_RLWINM_HELPER
+            
+            o->r[0] = DIS_RA;
+            o->r[1] = DIS_RS;
+            o->r[2] = DIS_RB;
+            o->iclass |= PPC_DISA_INTEGER | PPC_DISA_SIMPLIFIED;
+            return;
+        }
+        
+        if (me == 31 && 32 - DIS_RB == mb)
+        {
+            // srwi
+            format_mnemonic("srwi%c", Rc ? '.' : '\0');
+            ptr += sprintf(ptr, "%s" COMMA "%s" COMMA "%d", REGA, REGS, mb);
+            DISASM_PPC_BUILD_GPR_OP(DIS_RA, true);
+            DISASM_PPC_BUILD_GPR_OP(DIS_RS, false);
+            DISASM_PPC_BUILD_IMM_OP(mb, false);
+            DISASM_PPC_ADD_RLWINM_HELPER
+            
+            o->r[0] = DIS_RA;
+            o->r[1] = DIS_RS;
+            o->r[2] = mb;
+            o->iclass |= PPC_DISA_INTEGER | PPC_DISA_SIMPLIFIED;
+            return;
+        }
+        
+        if (mb == 0 && me != 31)
+        {
+            // extlwi
+            format_mnemonic("extlwi%c", Rc ? '.' : '\0');
+            int n = me + 1;
+            ptr += sprintf(ptr, "%s" COMMA "%s" COMMA "%d" COMMA "%lu", REGA, REGS, n, DIS_RB);
+            DISASM_PPC_BUILD_GPR_OP(DIS_RA, true);
+            DISASM_PPC_BUILD_GPR_OP(DIS_RS, false);
+            DISASM_PPC_BUILD_IMM_OP(n, false);
+            DISASM_PPC_BUILD_IMM_OP(DIS_RB, false);
+            DISASM_PPC_ADD_RLWINM_HELPER
+            
+            o->r[0] = DIS_RA;
+            o->r[1] = DIS_RS;
+            o->r[2] = n;
+            o->r[3] = DIS_RB;
+            o->iclass |= PPC_DISA_INTEGER | PPC_DISA_SIMPLIFIED;
+            return;
+        }
+        
+        if (mb != 0 && me == 31)
+        {
+            // extrwi
+            format_mnemonic("extrwi%c", Rc ? '.' : '\0');
+            int n = 32 - mb;
+            int b = DIS_RB - n;
+            ptr += sprintf(ptr, "%s" COMMA "%s" COMMA "%d" COMMA "%d", REGA, REGS, n, b);
+            DISASM_PPC_BUILD_GPR_OP(DIS_RA, true);
+            DISASM_PPC_BUILD_GPR_OP(DIS_RS, false);
+            DISASM_PPC_BUILD_IMM_OP(n, false);
+            DISASM_PPC_BUILD_IMM_OP(b, false);
+            DISASM_PPC_ADD_RLWINM_HELPER
+            
+            o->r[0] = DIS_RA;
+            o->r[1] = DIS_RS;
+            o->r[2] = n;
+            o->r[3] = b;
+            o->iclass |= PPC_DISA_INTEGER | PPC_DISA_SIMPLIFIED;
+            return;
+        }
+    }
 
+#endif
+
+    format_mnemonic("rlw%s%c", name, Rc ? '.' : '\0');
+    ptr += sprintf(ptr, "%s" COMMA "%s" COMMA, REGA, REGS);
+    DISASM_PPC_BUILD_GPR_OP(DIS_RA, true);
+    DISASM_PPC_BUILD_GPR_OP(DIS_RS, false);
+    if(rb)
+    {
+        ptr += sprintf(ptr, "%s" COMMA, REGB);
+        DISASM_PPC_BUILD_GPR_OP(DIS_RB, false);
+    }
+    else
+    {
+        ptr += sprintf(ptr, "%lu" COMMA, DIS_RB);     // sh
+        DISASM_PPC_BUILD_IMM_OP(DIS_RB, false);
+    }
+    ptr += sprintf(ptr, "%i" COMMA "%i", mb, me);
+    DISASM_PPC_BUILD_IMM_OP(mb, false);
+    DISASM_PPC_BUILD_IMM_OP(me, false);
+    DISASM_PPC_ADD_RLWINM_HELPER
+    
     // Put mask in target.
     MASK32(mb, me);
 #ifdef POWERPC_64
@@ -578,7 +1199,7 @@ static void rld(const char *name, int rb, int mtype)
     if(Instr & 0x02) n += 32;   // sh
 
     char * ptr = o->operands;
-    sprintf(o->mnemonic, "rld%s%c", name, Rc ? '.' : '\0');
+    format_mnemonic("rld%s%c", name, Rc ? '.' : '\0');
     ptr += sprintf(ptr, "%s" COMMA "%s" COMMA, REGA, REGS);
     if(rb) ptr += sprintf(ptr, "%s" COMMA, REGB);
     else   ptr += sprintf(ptr, "%i" COMMA, n);
@@ -602,17 +1223,99 @@ static void rld(const char *name, int rb, int mtype)
 // Load/Store.
 static void ldst(const char *name, int x/*indexed*/, int load, int L, int string, int fload)
 {
-    if(x) integer3(name, fload ? 'F' : 'X', DAB_D|DAB_A|DAB_B);
+    uint32_t size = 0;
+    int typeOff = 1;
+    if (name[0] == 's' && name[1] == 't')
+        typeOff = 2;
+    switch (name[typeOff])
+    {
+    case 'w':
+    default:
+        size = 4;
+        break;
+    case 'h':
+        size = 2;
+        break;
+    case 'b':
+        size = 1;
+        break;
+    case 'f':
+        if (name[typeOff+1] == 'd')
+            size = 8;
+        else
+            size = 4;
+        break;
+    }
+    
+    if(x)
+    {
+        s32 thisLis = o->lisArr ? o->lisArr[DIS_RA] : ~0;
+
+        integer3(name, fload ? 'F' : 'X', DAB_D|DAB_A|DAB_B);
+        
+        DisasmOperand* op = &o->disasm->operand[o->opIdx-1];
+        op->type = DISASM_OPERAND_MEMORY_TYPE;
+        op->type |= DISASM_BUILD_REGISTER_CLS_MASK(RegClass_GeneralPurposeRegister);
+        op->type |= DISASM_BUILD_REGISTER_INDEX_MASK(DIS_RB);
+        op->size = size;
+        op->memory.baseRegistersMask = DISASM_BUILD_REGISTER_INDEX_MASK(DIS_RA);
+        op->memory.indexRegistersMask = DISASM_BUILD_REGISTER_INDEX_MASK(DIS_RB);
+        op->memory.scale = 1;
+        
+        if (!load)
+        {
+            o->disasm->operand[0].accessMode = DISASM_ACCESS_READ;
+            o->disasm->implicitlyReadRegisters[RegClass_GeneralPurposeRegister] |= DISASM_BUILD_REGISTER_INDEX_MASK(DIS_RD);
+            o->disasm->implicitlyWrittenRegisters[RegClass_GeneralPurposeRegister] &= ~DISASM_BUILD_REGISTER_INDEX_MASK(DIS_RD);
+        }
+        
+        if (thisLis != ~0)
+        {
+            o->disasm->instruction.userData |= DISASM_PPC_INST_INDEXED_LOAD_STORE;
+            op->userData[1] = thisLis;
+        }
+    }
     else
     {
         int rd = DIS_RD, ra = DIS_RA;
         s16 imm = DIS_SIMM;
-        strcpy (o->mnemonic, name);
-        if(fload) sprintf (o->operands, "%s%i" COMMA "%s" LPAREN "%s" RPAREN, fregname, rd, simm(imm, 0, 1), regname[ra]);
-        else sprintf (o->operands, "%s" COMMA "%s" LPAREN "%s" RPAREN, regname[rd], simm(imm, 0, 1), regname[ra]);
+        copy_mnemonic(name);
+        s32 thisLis = o->lisArr ? o->lisArr[ra] : ~0;
+        if(fload)
+        {
+            sprintf (o->operands, "%s%i" COMMA "%s" LPAREN "%s" RPAREN, fregname, rd, simm(imm, 0, 1), regname[ra]);
+            DISASM_PPC_BUILD_FPR_OP(rd, load);
+            DISASM_PPC_BUILD_IMM_OP(imm, false);
+            DISASM_PPC_BUILD_GPR_OP(ra, false);
+        }
+        else
+        {
+            sprintf (o->operands, "%s" COMMA "%s" LPAREN "%s" RPAREN, regname[rd], simm(imm, 0, 1), regname[ra]);
+            DISASM_PPC_BUILD_GPR_OP(rd, load);
+            DISASM_PPC_BUILD_IMM_OP(imm, false);
+            DISASM_PPC_BUILD_GPR_OP(ra, false);
+        }
         o->r[0] = rd;
         o->r[1] = ra;
         o->immed = DIS_UIMM & 0x8000 ? DIS_UIMM | 0xFFFF0000 : DIS_UIMM;
+        o->disasm->instruction.userData |= DISASM_PPC_INST_LOAD_STORE;
+        
+        DisasmOperand* op = &o->disasm->operand[o->opIdx-1];
+        op->type = DISASM_OPERAND_MEMORY_TYPE;
+        op->type |= DISASM_BUILD_REGISTER_CLS_MASK(RegClass_GeneralPurposeRegister);
+        op->type |= DISASM_BUILD_REGISTER_INDEX_MASK(ra);
+        op->size = size;
+        op->memory.baseRegistersMask = DISASM_BUILD_REGISTER_INDEX_MASK(ra);
+        op->memory.displacement = imm;
+        
+        if (thisLis != ~0)
+        {
+            DisasmOperand* op = &o->disasm->operand[o->opIdx-2];
+            op->userData[0] |= DISASM_PPC_OPER_LIS_ADDI;
+            op->userData[0] |= DISASM_PPC_OPER_IMM_HEX;
+            op->userData[1] = thisLis + op->immediateValue;
+            o->disasm->instruction.addressValue = op->userData[1];
+        }
     }
 
     o->iclass = PPC_DISA_LDST;
@@ -655,11 +1358,13 @@ static void movesr(const char *name, int from, int L, int xform)
 {
     int reg = DIS_RD, sreg = DIS_RA & 0xF, regb = DIS_RB;
 
-    strncpy(o->mnemonic, name, sizeof(o->mnemonic));
+    copy_mnemonic(name);
     if(xform)
     {
         if(Instr & 0x001F0001) { ill(); return; }
         sprintf(o->operands, "%s" COMMA "%s", regname[reg], regname[regb]);
+        DISASM_PPC_BUILD_GPR_OP(reg, true);
+        DISASM_PPC_BUILD_GPR_OP(regb, false);
         o->r[0] = reg;
         o->r[1] = regb;
     }
@@ -669,12 +1374,16 @@ static void movesr(const char *name, int from, int L, int xform)
         if(from)
         {
             sprintf(o->operands, "%s" COMMA "%i", regname[reg], sreg);
+            DISASM_PPC_BUILD_GPR_OP(reg, true);
+            DISASM_PPC_BUILD_IMM_OP(sreg, false);
             o->r[0] = reg;
             o->r[1] = sreg;
         }
         else
         {
             sprintf(o->operands, "%i" COMMA "%s", sreg, regname[reg]);
+            DISASM_PPC_BUILD_IMM_OP(sreg, false);
+            DISASM_PPC_BUILD_GPR_OP(reg, false);
             o->r[0] = sreg;
             o->r[1] = reg;
         }
@@ -691,14 +1400,17 @@ static void mtcrf(void)
 #ifdef SIMPLIFIED
     if(crm == 0xFF)
     {
-        strncpy(o->mnemonic, "mtcr", sizeof(o->mnemonic));
+        copy_mnemonic("mtcr");
         sprintf(o->operands, "%s", regname[rs]);
+        DISASM_PPC_BUILD_GPR_OP(rs, false);
     }
     else
 #endif
     {
-        strncpy(o->mnemonic, "mtcrf", sizeof(o->mnemonic));
+        copy_mnemonic("mtcrf");
         sprintf(o->operands, HEX1 "%02X" HEX2 COMMA "%s", crm, regname[rs]);
+        DISASM_PPC_BUILD_IMM_OP(crm, true);
+        DISASM_PPC_BUILD_GPR_OP(rs, false);
     }
     o->r[0] = rs;
 }
@@ -706,122 +1418,10 @@ static void mtcrf(void)
 static void mcrxr(void)
 {
     if (Instr & 0x007FF800) { ill(); return; }
-    strcpy (o->mnemonic, "mcrxr");
+    copy_mnemonic("mcrxr");
     sprintf (o->operands, "%s%lu", crname, DIS_RD >> 2);
+    DISASM_PPC_BUILD_CR_OP(DIS_RD >> 2, true);
     o->r[0] = DIS_RD >> 2;
-}
-
-static const char *spr_name(int n)
-{
-    static char def[8];
-
-    switch(n)
-    {
-        // General architecture special-purpose registers.
-        case 1: return "XER";
-        case 8: return "LR";
-        case 9: return "CTR";
-        case 18: return "DSISR";
-        case 19: return "DAR";
-        case 22: return "DEC";
-        case 25: return "SDR1";
-        case 26: return "SRR0";
-        case 27: return "SRR1";
-        case 272: return "SPRG0";
-        case 273: return "SPRG1";
-        case 274: return "SPRG2";
-        case 275: return "SPRG3";
-#ifdef  POWERPC_64
-        case 280: return "ASR";
-#endif
-        case 284: return "TBL";
-        case 285: return "TBU";
-        case 287: return "PVR";
-        case 528: return "IBAT0U";
-        case 529: return "IBAT0L";
-        case 530: return "IBAT1U";
-        case 531: return "IBAT1L";
-        case 532: return "IBAT2U";
-        case 533: return "IBAT2L";
-        case 534: return "IBAT3U";
-        case 535: return "IBAT3L";
-        case 536: return "DBAT0U";
-        case 537: return "DBAT0L";
-        case 538: return "DBAT1U";
-        case 539: return "DBAT1L";
-        case 540: return "DBAT2U";
-        case 541: return "DBAT2L";
-        case 542: return "DBAT3U";
-        case 543: return "DBAT3L";
-
-        // Optional registers.
-#if !defined(GEKKO) && !defined(BROADWAY)
-        case 282: return "EAR";
-        case 1013: return "DABR";
-        case 1022: return "FPECR";
-        case 1023: return "PIR";
-#endif
-
-        // Gekko-specific SPRs
-#ifdef GEKKO
-        case 282: return "EAR";
-        case 912: return "GQR0";
-        case 913: return "GQR1";
-        case 914: return "GQR2";
-        case 915: return "GQR3";
-        case 916: return "GQR4";
-        case 917: return "GQR5";
-        case 918: return "GQR6";
-        case 919: return "GQR7";
-        case 920: return "HID2";
-        case 921: return "WPAR";
-        case 922: return "DMAU";
-        case 923: return "DMAL";
-        case 936: return "UMMCR0";
-        case 940: return "UMMCR1";
-        case 937: return "UPMC1";
-        case 938: return "UPMC2";
-        case 939: return "USIA";
-        case 941: return "UPMC3";
-        case 942: return "UPMC4";
-        case 943: return "USDA";
-        case 952: return "MMCR0";
-        case 953: return "PMC1";
-        case 954: return "PMC2";
-        case 955: return "SIA";
-        case 956: return "MMCR1";
-        case 957: return "PMC3";
-        case 958: return "PMC4";
-        case 959: return "SDA";
-        case 1008: return "HID0";
-        case 1009: return "HID1";
-        case 1010: return "IABR";
-        case 1013: return "DABR";
-        case 1017: return "L2CR";
-        case 1019: return "ICTC";
-        case 1020: return "THRM1";
-        case 1021: return "THRM2";
-        case 1022: return "THRM3";
-#endif
-    }
-
-    sprintf(def, "%u", n);
-    return def;
-}
-
-static const char *tbr_name(int n)
-{
-    static char def[8];
-
-    switch(n)
-    {
-        // General architecture time-base registers.
-        case 268: return "TBL";
-        case 269: return "TBU";
-    }
-
-    sprintf(def, "%u", n);
-    return def;
 }
 
 static void movespr(int from)
@@ -838,10 +1438,12 @@ static void movespr(int from)
     else { fix = "spr"; f = 0; }
 
     // Mnemonics and operands.
-    sprintf (o->mnemonic, "m%c%s", from ? 'f' : 't', fix);
+    format_mnemonic("m%c%s", from ? 'f' : 't', fix);
     if (f)
     {
         sprintf (o->operands, "%s", regname[DIS_RD]);
+        DISASM_PPC_BUILD_GPR_OP(DIS_RD, from);
+        if (!from && spr == 8)
         o->r[0] = DIS_RD;
     }
     else
@@ -849,12 +1451,16 @@ static void movespr(int from)
         if (from)
         {
             sprintf (o->operands, "%s" COMMA "%s", regname[DIS_RD], spr_name(spr));
+            DISASM_PPC_BUILD_GPR_OP(DIS_RD, true);
+            DISASM_PPC_BUILD_SPR_OP(spr, false);
             o->r[0] = DIS_RD;
             o->r[1] = spr;
         }
         else
         {
             sprintf (o->operands, "%s" COMMA "%s", spr_name(spr), regname[DIS_RD]);
+            DISASM_PPC_BUILD_SPR_OP(spr, true);
+            DISASM_PPC_BUILD_GPR_OP(DIS_RD, false);
             o->r[0] = spr;
             o->r[1] = DIS_RD;
         }
@@ -872,15 +1478,18 @@ static void movetbr(void)
     else { fix = "tb"; f = 0; }
 
     // Mnemonics and operands.
-    sprintf (o->mnemonic, "mf%s", fix);
+    format_mnemonic("mf%s", fix);
     if (f)
     {
         sprintf (o->operands, "%s", regname[DIS_RD]);
+        DISASM_PPC_BUILD_GPR_OP(DIS_RD, true);
         o->r[0] = DIS_RD;
     }
     else
     {
         sprintf (o->operands, "%s" COMMA "%s", regname[DIS_RD], tbr_name(tbr));
+        DISASM_PPC_BUILD_GPR_OP(DIS_RD, true);
+        DISASM_PPC_BUILD_TBR_OP(tbr, false);
         o->r[0] = DIS_RD;
         o->r[1] = tbr;
     }
@@ -889,8 +1498,11 @@ static void movetbr(void)
 static void srawi(void)
 {
     int rs = DIS_RS, ra = DIS_RA, sh = DIS_RB;
-    sprintf (o->mnemonic, "srawi%c", Rc ? '.' : 0);
+    format_mnemonic("srawi%c", Rc ? '.' : 0);
     sprintf (o->operands, "%s" COMMA "%s" COMMA "%i", regname[ra], regname[rs], sh);
+    DISASM_PPC_BUILD_GPR_OP(ra, true);
+    DISASM_PPC_BUILD_GPR_OP(rs, false);
+    DISASM_PPC_BUILD_IMM_OP(sh, false);
     o->r[0] = ra;
     o->r[1] = rs;
     o->r[2] = sh;
@@ -900,7 +1512,7 @@ static void srawi(void)
 static void sradi(void)
 {
     int rs = DIS_RS, ra = DIS_RA, sh = (((Instr >> 1) & 1) << 5) | DIS_RB;
-    sprintf (o->mnemonic, "sradi%c", Rc ? '.' : 0);
+    format_mnemonic("sradi%c", Rc ? '.' : 0);
     sprintf (o->operands, "%s" COMMA "%s" COMMA "%i", regname[ra], regname[rs], sh);
     o->r[0] = ra;
     o->r[1] = rs;
@@ -911,8 +1523,18 @@ static void sradi(void)
 static void lsswi(const char *name)
 {
     int rd = DIS_RD, ra = DIS_RA, nb = DIS_RB;
-    strcpy (o->mnemonic, name);
+    copy_mnemonic(name);
     sprintf (o->operands, "%s" COMMA "%s" COMMA "%i", regname[rd], regname[ra], nb);
+    DISASM_PPC_BUILD_GPR_OP(rd, true);
+    DISASM_PPC_BUILD_GPR_OP(ra, false);
+    DISASM_PPC_BUILD_IMM_OP(nb, false);
+    for (int i = 0; i < (nb + 3) / 4; ++i)
+    {
+        if (ra + i < 32)
+            o->disasm->implicitlyReadRegisters[RegClass_GeneralPurposeRegister] |= DISASM_BUILD_REGISTER_INDEX_MASK(ra + i);
+        if (rd + i < 32)
+            o->disasm->implicitlyWrittenRegisters[RegClass_GeneralPurposeRegister] |= DISASM_BUILD_REGISTER_INDEX_MASK(rd + i);
+    }
     o->r[0] = rd;
     o->r[1] = ra;
     o->r[2] = nb;
@@ -931,28 +1553,41 @@ static void fpu(const char *name, u32 mask, int type, int flag)
 
     if(Instr & mask) { ill(); return; }
 
-    strcpy (o->mnemonic, name);
+    copy_mnemonic(name);
 
     switch (type)
     {
         case FPU_DAB:
             sprintf (o->operands, "%s%i" COMMA "%s%i" COMMA "%s%i", fregname, d, fregname, a, fregname, b);
+            DISASM_PPC_BUILD_FPR_OP(d, true);
+            DISASM_PPC_BUILD_FPR_OP(a, false);
+            DISASM_PPC_BUILD_FPR_OP(b, false);
             o->r[0] = d; o->r[1] = a; o->r[2] = b;
             break;
         case FPU_DB:
             sprintf (o->operands, "%s%i" COMMA "%s%i", fregname, d, fregname, b);
+            DISASM_PPC_BUILD_FPR_OP(d, true);
+            DISASM_PPC_BUILD_FPR_OP(b, false);
             o->r[0] = d; o->r[1] = b;
             break;
         case FPU_DAC:
             sprintf (o->operands, "%s%i" COMMA "%s%i" COMMA "%s%i", fregname, d, fregname, a, fregname, c);
+            DISASM_PPC_BUILD_FPR_OP(d, true);
+            DISASM_PPC_BUILD_FPR_OP(a, false);
+            DISASM_PPC_BUILD_FPR_OP(c, false);
             o->r[0] = d; o->r[1] = a; o->r[2] = c;
             break;
         case FPU_DACB:
             sprintf (o->operands, "%s%i" COMMA "%s%i" COMMA "%s%i" COMMA "%s%i", fregname, d, fregname, a, fregname, c, fregname, b);
+            DISASM_PPC_BUILD_FPR_OP(d, true);
+            DISASM_PPC_BUILD_FPR_OP(a, false);
+            DISASM_PPC_BUILD_FPR_OP(c, false);
+            DISASM_PPC_BUILD_FPR_OP(b, false);
             o->r[0] = d; o->r[1] = a; o->r[2] = c; o->r[3] = b;
             break;
         case FPU_D:
             sprintf (o->operands, "%s%i", fregname, d);
+            DISASM_PPC_BUILD_FPR_OP(d, true);
             o->r[0] = d;
             break;
     }
@@ -969,8 +1604,11 @@ static void fcmp(const char *name)
 
     if (Instr & 0x00600001) { ill(); return; }
 
-    strcpy (o->mnemonic, name);
+    copy_mnemonic(name);
     sprintf (o->operands, "%i" COMMA "%s%i" COMMA "%s%i", crfd, fregname, ra, fregname, rb);
+    DISASM_PPC_BUILD_CR_OP(crfd, true);
+    DISASM_PPC_BUILD_FPR_OP(ra, false);
+    DISASM_PPC_BUILD_FPR_OP(rb, false);
     o->r[0] = crfd; o->r[1] = ra; o->r[2] = rb;
     o->iclass = PPC_DISA_FPU;
 }
@@ -981,8 +1619,10 @@ static void mtfsf(void)
 
     if(Instr & 0x02010000) { ill(); return; }
 
-    sprintf (o->mnemonic, "mtfsf%c", Rc ? '.' : 0);
+    format_mnemonic("mtfsf%c", Rc ? '.' : 0);
     sprintf (o->operands, HEX1 "%02X" HEX2 COMMA "%s%i", fm, fregname, rb);
+    DISASM_PPC_BUILD_IMM_OP(fm, false);
+    DISASM_PPC_BUILD_FPR_OP(rb, false);
     o->r[0] = fm; o->r[1] = rb;
     o->iclass = PPC_DISA_FPU;
 }
@@ -993,8 +1633,9 @@ static void mtfsb(const char *name)
 
     if (Instr & 0x001FF800) { ill(); return; }
 
-    strcpy (o->mnemonic, name);
+    copy_mnemonic(name);
     sprintf (o->operands, "%i", crbd);
+    DISASM_PPC_BUILD_IMM_OP(crbd, false);
     o->r[0] = crbd;
     o->iclass = PPC_DISA_FPU;
 }
@@ -1005,8 +1646,10 @@ static void mcrfs(void)
 
     if (Instr & 0x0063F801) { ill(); return; }
 
-    strcpy (o->mnemonic, "mcrfs");
+    copy_mnemonic("mcrfs");
     sprintf (o->operands, "%s%i" COMMA "%s%i", crname, crfD, crname, crfS);
+    DISASM_PPC_BUILD_CR_OP(crfD, true);
+    DISASM_PPC_BUILD_CR_OP(crfS, false);
     o->r[0] = crfD; o->r[1] = crfS;
     o->iclass = PPC_DISA_FPU;
 }
@@ -1017,8 +1660,10 @@ static void mtfsfi(void)
 
     if (Instr & 0x007F0800) { ill(); return; }
 
-    sprintf (o->mnemonic, "mtfsfi%c", Rc ? '.' : 0);
+    format_mnemonic("mtfsfi%c", Rc ? '.' : 0);
     sprintf (o->operands, "%s%i" COMMA "%i", crname, crfD, imm);
+    DISASM_PPC_BUILD_CR_OP(crfD, true);
+    DISASM_PPC_BUILD_IMM_OP(imm, false);
     o->r[0] = crfD; o->r[1] = imm;
     o->iclass = PPC_DISA_FPU;
 }
@@ -1036,9 +1681,12 @@ static void ps_cmpx(int n)
 {
     static char *fix[] = { "u0", "o0", "u1", "o1" };
     if(Instr & 0x00600001) { ill(); return; }
-    sprintf(o->mnemonic, "ps_cmp%s", fix[n]);
+    format_mnemonic("ps_cmp%s", fix[n]);
     o->r[0] = DIS_RD>>2; o->r[1] = DIS_RA; o->r[2] = DIS_RB;
     sprintf(o->operands, "%s%d" COMMA "%s%d" COMMA "%s%d", crname, o->r[0], fregname, o->r[1], fregname, o->r[2]);
+    DISASM_PPC_BUILD_CR_OP(o->r[0], true);
+    DISASM_PPC_BUILD_FPR_OP(o->r[1], false);
+    DISASM_PPC_BUILD_FPR_OP(o->r[2], false);
     o->iclass = PPC_DISA_FPU | PPC_DISA_SPECIFIC; 
 }
 
@@ -1067,63 +1715,92 @@ static char *ps_ldst_offs(unsigned long val)
 
 static void ps_ldst(char *fix)
 {
-  int s = DIS_RS, a = DIS_RA, d = (Instr & 0xfff);
-  sprintf(o->mnemonic, "psq_%s", fix);  
-  sprintf( o->operands, "%s%i" COMMA "%s" LPAREN "%s" RPAREN COMMA "%i" COMMA "%i",
-           fregname, s, ps_ldst_offs(d), regname[a], (Instr >> 15) & 1, (Instr >> 12) & 7 );
-  o->r[0] = s; o->r[1] = a; o->r[2] = DIS_RB >> 1;
-  o->immed = d & 0x800 ? d | 0xFFFFF000 : d;
-  o->iclass = PPC_DISA_FPU | PPC_DISA_LDST | PPC_DISA_SPECIFIC;
+    int s = DIS_RS, a = DIS_RA, d = (Instr & 0xfff);
+    format_mnemonic("psq_%s", fix);
+    sprintf( o->operands, "%s%i" COMMA "%s" LPAREN "%s" RPAREN COMMA "%i" COMMA "%i",
+             fregname, s, ps_ldst_offs(d), regname[a], (Instr >> 15) & 1, (Instr >> 12) & 7 );
+    o->r[0] = s; o->r[1] = a; o->r[2] = DIS_RB >> 1;
+    o->immed = d & 0x800 ? d | 0xFFFFF000 : d;
+    o->iclass = PPC_DISA_FPU | PPC_DISA_LDST | PPC_DISA_SPECIFIC;
+    
+    DISASM_PPC_BUILD_FPR_OP(s, true);
+    DISASM_PPC_BUILD_IMM_OP((s32)(d & 0x800 ? d | 0xFFFFF000 : d), true);
+    DISASM_PPC_BUILD_GPR_OP(a, false);
+    DISASM_PPC_BUILD_IMM_OP((Instr >> 15) & 1, false);
+    DISASM_PPC_BUILD_IMM_OP((Instr >> 12) & 7, false);
+    o->disasm->instruction.userData |= DISASM_PPC_INST_LOAD_STORE;
 }
 
 static void ps_ldstx(char *fix)
 {
     int d = DIS_RD, a = DIS_RA, b = DIS_RB;
     if(Instr & 1) { ill(); return; }
-    sprintf(o->mnemonic, "psq_%s", fix);
+    format_mnemonic("psq_%s", fix);
     sprintf(o->operands, "%s%i" COMMA "%s" COMMA "%s" COMMA "%i" COMMA "%i", fregname, d, regname[a], regname[b], (Instr >> 10) & 1, (Instr >> 7) & 7);
     o->r[0] = d; o->r[1] = a; o->r[2] = b; o->r[3] = DIS_RC >> 1;
-    o->iclass = PPC_DISA_FPU | PPC_DISA_LDST | PPC_DISA_SPECIFIC; 
+    o->iclass = PPC_DISA_FPU | PPC_DISA_LDST | PPC_DISA_SPECIFIC;
+    
+    DISASM_PPC_BUILD_FPR_OP(d, true);
+    DISASM_PPC_BUILD_GPR_OP(a, false);
+    DISASM_PPC_BUILD_GPR_OP(b, false);
+    DISASM_PPC_BUILD_IMM_OP((Instr >> 10) & 1, false);
+    DISASM_PPC_BUILD_IMM_OP((Instr >> 7) & 7, false);
 }
 
 static void ps_dacb(char *fix)
 {
     int a = DIS_RA, b = DIS_RB, c = DIS_RC, d = DIS_RD;
-    sprintf(o->mnemonic, "ps_%s%c", fix, Rc ? '.' : 0);
+    format_mnemonic("ps_%s%c", fix, Rc ? '.' : 0);
     sprintf(o->operands, "%s%i" COMMA "%s%i" COMMA "%s%i" COMMA "%s%i", fregname, d, fregname, a, fregname, c, fregname, b);
     o->r[0] = d; o->r[1] = a; o->r[2] = c; o->r[3] = b; 
     o->iclass = PPC_DISA_FPU | PPC_DISA_SPECIFIC;
+    
+    DISASM_PPC_BUILD_FPR_OP(d, true);
+    DISASM_PPC_BUILD_FPR_OP(a, false);
+    DISASM_PPC_BUILD_FPR_OP(c, false);
+    DISASM_PPC_BUILD_FPR_OP(b, false);
 }
 
 static void ps_dac(char *fix)
 {
     int a = DIS_RA, c = DIS_RC, d = DIS_RD;
     if(Instr & 0x0000F800) { ill(); return; }
-    sprintf(o->mnemonic, "ps_%s%c", fix, Rc ? '.' : 0);
+    format_mnemonic("ps_%s%c", fix, Rc ? '.' : 0);
     sprintf(o->operands, "%s%i" COMMA "%s%i" COMMA "%s%i", fregname, d, fregname, a, fregname, c);
     o->r[0] = d; o->r[1] = a; o->r[2] = c;
     o->iclass = PPC_DISA_FPU | PPC_DISA_SPECIFIC;
+    
+    DISASM_PPC_BUILD_FPR_OP(d, true);
+    DISASM_PPC_BUILD_FPR_OP(a, false);
+    DISASM_PPC_BUILD_FPR_OP(c, false);
 }
 
-static void ps_dab(char *fix, int unmask=0)
+static void ps_dab(char *fix, int unmask)
 {
     int d = DIS_RD, a = DIS_RA, b = DIS_RB;
     if(Instr & 0x000007C0 && !unmask) { ill(); return; }
-    sprintf(o->mnemonic, "ps_%s%c", fix, Rc ? '.' : 0);
+    format_mnemonic("ps_%s%c", fix, Rc ? '.' : 0);
     sprintf(o->operands, "%s%i" COMMA "%s%i" COMMA "%s%i", fregname, d, fregname, a, fregname, b);
     o->r[0] = d; o->r[1] = a; o->r[2] = b;
     o->iclass = PPC_DISA_FPU | PPC_DISA_SPECIFIC;
+    
+    DISASM_PPC_BUILD_FPR_OP(d, true);
+    DISASM_PPC_BUILD_FPR_OP(a, false);
+    DISASM_PPC_BUILD_FPR_OP(b, false);
 }
 
-static void ps_db(char *fix, int aonly=0)
+static void ps_db(char *fix, int aonly)
 {
     int d = DIS_RD, b = DIS_RB;
     if(aonly) { if(Instr & 0x001F0000) { ill(); return; } }
     else  { if(Instr & 0x001F07C0) { ill(); return; } }
-    sprintf(o->mnemonic, "ps_%s%c", fix, Rc ? '.' : 0);
+    format_mnemonic("ps_%s%c", fix, Rc ? '.' : 0);
     sprintf(o->operands, "%s%i" COMMA "%s%i", fregname, d, fregname, b);
     o->r[0] = d; o->r[1] = b;
     o->iclass = PPC_DISA_FPU | PPC_DISA_SPECIFIC;
+    
+    DISASM_PPC_BUILD_FPR_OP(d, true);
+    DISASM_PPC_BUILD_FPR_OP(b, false);
 }
 
 #endif  /* END OF GEKKO */
@@ -1151,6 +1828,7 @@ void PPCDisasm(PPCD_CB *discb)
     o->immed = 0;
     o->target = 0;
     o->mnemonic[0] = o->operands[0] = '\0';
+    o->opIdx = 0;
 
     // Lets go!
 
@@ -1411,7 +2089,12 @@ void PPCDisasm(PPCD_CB *discb)
         case 01471: integer3("orc.", 'Z', ASB_A|ASB_S|ASB_B); break;
         case 01554: integer3("ecowx", 'X', DAB_D|DAB_A|DAB_B); o->iclass = PPC_DISA_OPTIONAL; break; // ecowx
         case 01556: ldst3("sthux", 1, 0); break;                             // sthux
-        case 01570: integer3("or", 'Z', ASB_A|ASB_S|ASB_B); break;           // orx
+        case 01570:
+#ifdef SIMPLIFIED
+        if (DIS_RS == DIS_RB) { integer3("mr", 'Z', ASB_A|ASB_S); o->iclass |= PPC_DISA_SIMPLIFIED; }
+        else
+#endif
+        integer3("or", 'Z', ASB_A|ASB_S|ASB_B); break;           // orx
         case 01571: integer3("or.", 'Z', ASB_A|ASB_S|ASB_B); break;
         case 01626: integer3("divwu", 'X', DAB_D|DAB_A|DAB_B); break;        // divwux
         case 01626|OE: integer3("divwuo", 'X', DAB_D|DAB_A|DAB_B); break;
@@ -1783,13 +2466,13 @@ void PPCDisasm(PPCD_CB *discb)
                 case 19: ps_dab("merge11", 1); break;                       // ps_merge11x
                 default: ill(); break;
             } break;
-            case 18: ps_dab("div"); break;                                  // ps_divx
-            case 20: ps_dab("sub"); break;                                  // ps_subx
-            case 21: ps_dab("add"); break;                                  // ps_addx
+            case 18: ps_dab("div", 0); break;                                  // ps_divx
+            case 20: ps_dab("sub", 0); break;                                  // ps_subx
+            case 21: ps_dab("add", 0); break;                                  // ps_addx
             case 23: ps_dacb("sel"); break;                                 // ps_selx
-            case 24: ps_db("res"); break;                                   // ps_resx
+            case 24: ps_db("res", 0); break;                                   // ps_resx
             case 25: ps_dac("mul"); break;                                  // ps_mulx
-            case 26: ps_db("rsqrte"); break;                                // ps_rsqrtex
+            case 26: ps_db("rsqrte", 0); break;                                // ps_rsqrtex
             case 28: ps_dacb("msub"); break;                                // ps_msubx
             case 29: ps_dacb("madd"); break;                                // ps_maddx
             case 30: ps_dacb("nmsub"); break;                               // ps_nmsubx

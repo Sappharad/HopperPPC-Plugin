@@ -17,9 +17,9 @@
 		076B713C18C4D07F00DE7FD0 /* CoreFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreFoundation.framework; path = System/Library/Frameworks/CoreFoundation.framework; sourceTree = SDKROOT; };
 		076B714018C4D07F00DE7FD0 /* DOLLoader-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "DOLLoader-Info.plist"; sourceTree = "<group>"; };
 		076B714218C4D07F00DE7FD0 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
-		076B714418C4D07F00DE7FD0 /* DOLLoader-Prefix.pch */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "DOLLoader-Prefix.pch"; sourceTree = "<group>"; };
-		076B714A18C4D1A900DE7FD0 /* DOLLoader.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = DOLLoader.h; sourceTree = "<group>"; };
-		076B714B18C4D1A900DE7FD0 /* DOLLoader.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = DOLLoader.m; sourceTree = "<group>"; };
+		076B714418C4D07F00DE7FD0 /* DOLLoader-Prefix.pch */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; lineEnding = 0; path = "DOLLoader-Prefix.pch"; sourceTree = "<group>"; };
+		076B714A18C4D1A900DE7FD0 /* DOLLoader.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; lineEnding = 0; path = DOLLoader.h; sourceTree = "<group>"; };
+		076B714B18C4D1A900DE7FD0 /* DOLLoader.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; lineEnding = 0; path = DOLLoader.m; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -109,7 +109,7 @@
 			isa = PBXProject;
 			attributes = {
 				LastUpgradeCheck = 0800;
-				ORGANIZATIONNAME = "com.sappharad";
+				ORGANIZATIONNAME = com.sappharad;
 			};
 			buildConfigurationList = 076B713418C4D07F00DE7FD0 /* Build configuration list for PBXProject "DOLLoader" */;
 			compatibilityVersion = "Xcode 3.2";

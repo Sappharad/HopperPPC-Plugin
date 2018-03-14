@@ -24,6 +24,10 @@
     return _services;
 }
 
+- (Class)cpuContextClass {
+    return [PPCCtx class];
+}
+
 - (NSObject<CPUContext> *)buildCPUContextForFile:(NSObject<HPDisassembledFile> *)file {
     return [[PPCCtx alloc] initWithCPU:self andFile:file];
 }
@@ -37,36 +41,36 @@
 }
 
 - (NSString *)pluginName {
-    return @"IBM PPC";
+    return @"PowerPC Gecko";
 }
 
 - (NSString *)pluginDescription {
-    return @"PowerPC CPU support";
+    return @"PowerPC Gecko CPU support";
 }
 
 - (NSString *)pluginAuthor {
-    return @"Paul Kratt - Based on code by org, whoever that is";
+    return @"Paul Kratt and Jack Andersen - Based on code by org, whoever that is";
 }
 
 - (NSString *)pluginCopyright {
-    return @"©2015";
+    return @"©2018";
 }
 
 - (NSArray *)cpuFamilies {
-    return @[@"ibm"];
+    return @[@"ppc32"];
 }
 
 - (NSString *)pluginVersion {
-    return @"0.0.1";
+    return @"0.0.2";
 }
 
 - (NSArray *)cpuSubFamiliesForFamily:(NSString *)family {
-    if ([family isEqualToString:@"ibm"]) return @[@"ppc"];
+    if ([family isEqualToString:@"ppc32"]) return @[@"gecko"];
     return nil;
 }
 
 - (int)addressSpaceWidthInBitsForCPUFamily:(NSString *)family andSubFamily:(NSString *)subFamily {
-    if ([family isEqualToString:@"ibm"] && [subFamily isEqualToString:@"ppc"]) return 32;
+    if ([family isEqualToString:@"ppc32"] && [subFamily isEqualToString:@"gecko"]) return 32;
     return 0;
 }
 
@@ -90,7 +94,7 @@
     return @[@"generic"];
 }
 
-- (NSString *)framePointerRegisterNameForFile:(NSObject<HPDisassembledFile> *)file {
+- (NSString *)framePointerRegisterNameForFile:(NSObject<HPDisassembledFile>*)file cpuMode:(uint8_t)cpuMode {
     return nil;
 }
 
@@ -101,32 +105,38 @@
 - (NSUInteger)registerCountForClass:(RegClass)reg_class {
     switch (reg_class) {
         case RegClass_CPUState: return 1;
-        case RegClass_PseudoRegisterSTACK: return 32;
         case RegClass_GeneralPurposeRegister: return 32;
-        case RegClass_AddressRegister: return 8;
+        case RegClass_FPRegister: return 32;
+        case RegClass_PPC_Cnt: return 1;
+        case RegClass_PPC_CondReg: return 8;
         default: break;
     }
     return 0;
 }
 
-- (BOOL)registerIndexIsStackPointer:(NSUInteger)reg ofClass:(RegClass)reg_class {
-    return reg_class == RegClass_AddressRegister && reg == 1;
+- (BOOL)registerIndexIsStackPointer:(NSUInteger)reg ofClass:(RegClass)reg_class cpuMode:(uint8_t)cpuMode file:(NSObject<HPDisassembledFile> *)file {
+    return reg_class == RegClass_GeneralPurposeRegister && reg == 1;
 }
 
-- (BOOL)registerIndexIsFrameBasePointer:(NSUInteger)reg ofClass:(RegClass)reg_class {
+- (BOOL)registerIndexIsFrameBasePointer:(NSUInteger)reg ofClass:(RegClass)reg_class cpuMode:(uint8_t)cpuMode file:(NSObject<HPDisassembledFile> *)file {
     return NO;
 }
 
-- (BOOL)registerIndexIsProgramCounter:(NSUInteger)reg {
+- (BOOL)registerIndexIsProgramCounter:(NSUInteger)reg cpuMode:(uint8_t)cpuMode file:(NSObject<HPDisassembledFile> *)file {
     return NO;
 }
 
-- (NSString *)registerIndexToString:(NSUInteger)reg ofClass:(RegClass)reg_class withBitSize:(NSUInteger)size andPosition:(DisasmPosition)position {
+- (BOOL)registerHasSideEffectForIndex:(NSUInteger)reg andClass:(RegClass)reg_class {
+    return NO;
+}
+
+- (NSString *)registerIndexToString:(NSUInteger)reg ofClass:(RegClass)reg_class withBitSize:(NSUInteger)size position:(DisasmPosition)position andSyntaxIndex:(NSUInteger)syntaxIndex {
     switch (reg_class) {
         case RegClass_CPUState: return @"CCR";
-        case RegClass_PseudoRegisterSTACK: return [NSString stringWithFormat:@"STK%lu", (unsigned long)reg];
-        case RegClass_GeneralPurposeRegister: return [NSString stringWithFormat:@"d%lu", (unsigned long)reg];
-        case RegClass_AddressRegister: return [NSString stringWithFormat:@"a%lu", (unsigned long)reg];
+        case RegClass_GeneralPurposeRegister: return [NSString stringWithFormat:@"r%lu", (unsigned long)reg];
+        case RegClass_FPRegister: return [NSString stringWithFormat:@"f%lu", (unsigned long)reg];
+        case RegClass_PPC_Cnt: return @"count";
+        case RegClass_PPC_CondReg: return [NSString stringWithFormat:@"cr%lu", (unsigned long)reg];
         default: break;
     }
     return nil;
@@ -139,36 +149,6 @@
 - (NSUInteger)translateOperandIndex:(NSUInteger)index operandCount:(NSUInteger)count accordingToSyntax:(uint8_t)syntaxIndex {
     return index;
 }
-
-/*- (NSAttributedString *)colorizeInstructionString:(NSAttributedString *)string {
-    NSMutableAttributedString *colorized = [string mutableCopy];
-    [_services colorizeASMString:colorized
-               operatorPredicate:^BOOL(unichar c) {
-                   return (c == '#' || c == '$');
-               }
-           languageWordPredicate:^BOOL(NSString *s) {
-               return [s isEqualToString:@"r0"] || [s isEqualToString:@"r1"] || [s isEqualToString:@"r2"] || [s isEqualToString:@"r3"]
-               || [s isEqualToString:@"r4"] || [s isEqualToString:@"r5"] || [s isEqualToString:@"r6"] || [s isEqualToString:@"r7"]
-               || [s isEqualToString:@"r8"] || [s isEqualToString:@"r9"] || [s isEqualToString:@"r10"] || [s isEqualToString:@"r11"]
-               || [s isEqualToString:@"r12"] || [s isEqualToString:@"r13"] || [s isEqualToString:@"r14"] || [s isEqualToString:@"r15"]
-               || [s isEqualToString:@"r16"] || [s isEqualToString:@"r17"] || [s isEqualToString:@"r18"] || [s isEqualToString:@"r19"]
-               || [s isEqualToString:@"r20"] || [s isEqualToString:@"r21"] || [s isEqualToString:@"r22"] || [s isEqualToString:@"r23"]
-               || [s isEqualToString:@"r24"] || [s isEqualToString:@"r25"] || [s isEqualToString:@"r26"] || [s isEqualToString:@"r27"]
-               || [s isEqualToString:@"r28"] || [s isEqualToString:@"r29"] || [s isEqualToString:@"r30"] || [s isEqualToString:@"r31"]
-               || [s isEqualToString:@"fr0"] || [s isEqualToString:@"fr1"] || [s isEqualToString:@"fr2"] || [s isEqualToString:@"fr3"]
-               || [s isEqualToString:@"fr4"] || [s isEqualToString:@"fr5"] || [s isEqualToString:@"fr6"] || [s isEqualToString:@"fr7"]
-               || [s isEqualToString:@"fr8"] || [s isEqualToString:@"fr9"] || [s isEqualToString:@"fr10"] || [s isEqualToString:@"fr11"]
-               || [s isEqualToString:@"fr12"] || [s isEqualToString:@"fr13"] || [s isEqualToString:@"fr14"] || [s isEqualToString:@"fr15"]
-               || [s isEqualToString:@"fr16"] || [s isEqualToString:@"fr17"] || [s isEqualToString:@"fr18"] || [s isEqualToString:@"fr19"]
-               || [s isEqualToString:@"fr20"] || [s isEqualToString:@"fr21"] || [s isEqualToString:@"fr22"] || [s isEqualToString:@"fr23"]
-               || [s isEqualToString:@"fr24"] || [s isEqualToString:@"fr25"] || [s isEqualToString:@"fr26"] || [s isEqualToString:@"fr27"]
-               || [s isEqualToString:@"fr28"] || [s isEqualToString:@"fr29"] || [s isEqualToString:@"fr30"] || [s isEqualToString:@"fr31"];
-           }
-        subLanguageWordPredicate:^BOOL(NSString *s) {
-            return NO;
-        }];
-    return colorized;
-}*/
 
 - (NSData *)nopWithSize:(NSUInteger)size andMode:(NSUInteger)cpuMode forFile:(NSObject<HPDisassembledFile> *)file {
     // Instruction size is always a multiple of 4
