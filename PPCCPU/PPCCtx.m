@@ -583,6 +583,14 @@ static int GetRegisterIndex(DisasmOperandType type)
     return line;
 }
 
+static const char* CRNames[] =
+{
+    "lt",
+    "gt",
+    "eq",
+    "so"
+};
+
 - (NSObject<HPASMLine> *)buildCompleteOperandString:(DisasmStruct *)disasm inFile:(NSObject<HPDisassembledFile> *)file raw:(BOOL)raw {
     NSObject<HPHopperServices> *services = _cpu.hopperServices;
     
@@ -633,6 +641,13 @@ static int GetRegisterIndex(DisasmOperandType type)
                 [line appendComment:[NSString stringWithFormat:@" # r%d = (r%d << %d) & 0x%08X", ra, rs, sh, MASK32VAL(mb, me)]];
             }
         }
+    }
+    
+    if (!strcmp(disasm->instruction.mnemonic, "cror")) {
+        [line appendComment:[NSString stringWithFormat:@" # %s = %s | %s",
+                             CRNames[GetRegisterIndex(disasm->operand[0].type) & 0x3],
+                             CRNames[GetRegisterIndex(disasm->operand[1].type) & 0x3],
+                             CRNames[GetRegisterIndex(disasm->operand[2].type) & 0x3]]];
     }
     
     return line;
