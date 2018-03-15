@@ -85,13 +85,16 @@ void OSWriteBigInt32(void *address, uintptr_t offset, int32_t data) {
     //The Wii has more memory than that, but for the initial release I'm targeting Gamecube specs.
     
     //Text0 does not need to be at 0x100, but it always is. We're going to use it to identify this as a DOL.
-    if (t0offset == 0x100 && t0dest >= 0x80000000 && t0dest <= 0x8C000000 && entryPoint >= 0x80000000 && entryPoint <= 0x8C000000) {
+    if (t0offset == 0x100 &&
+        t0dest >= 0x80000000 && t0dest <= 0x8C000000 &&
+        entryPoint >= 0x80000000 && entryPoint <= 0x8C000000) {
         NSObject<HPDetectedFileType> *type = [_services detectedType];
         [type setFileDescription:@"Gamecube/Wii Executable"];
         [type setAddressWidth:AW_32bits];
         [type setCpuFamily:@"ppc32"];
         [type setCpuSubFamily:@"gecko"];
         [type setShortDescriptionString:@"gamecube_dol"];
+        type.additionalParameters = @[[_services checkboxComponentWithLabel:@"Scan data sections for addresses" checked:YES]];
         return @[type];
     }
 
@@ -246,7 +249,7 @@ static const struct SectionRange* FindSectionRange(const struct SectionRange* ra
         }
     }
     
-    /* Create SBSS section */
+    /* Create BSS section */
     const struct SectionRange* range = FindSectionRange(sections, 18);
     bssLocation = range->start;
     bssLength = range->length;
@@ -292,6 +295,21 @@ static const struct SectionRange* FindSectionRange(const struct SectionRange* ra
 
     uint32_t entryPoint = OSReadBigInt32(bytes, 0xE0);
     [file addEntryPoint:entryPoint];
+    
+    if (((NSObject<HPLoaderOptionComponents>*)fileType.additionalParameters[0]).isChecked) {
+        for (NSObject<HPSegment> *seg in file.segments) {
+            if (seg.readable && !seg.executable) {
+                for (uint64_t offset = 0; offset < seg.fileLength; offset += 4) {
+                    uint32_t data = OSReadBigInt32(bytes, seg.fileOffset + offset);
+                    if (data >= 0x80000000 && data <= 0x8C000000) {
+                        Address addr = seg.startAddress + offset;
+                        [file setType:Type_Int32 atVirtualAddress:addr forLength:4];
+                        [file setFormat:Format_Address forArgument:0 atVirtualAddress:addr];
+                    }
+                }
+            }
+        }
+    }
 
     return DIS_OK;
 }

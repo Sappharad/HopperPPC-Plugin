@@ -2095,7 +2095,12 @@ void PPCDisasm(PPCD_CB *discb)
         else
 #endif
         integer3("or", 'Z', ASB_A|ASB_S|ASB_B); break;           // orx
-        case 01571: integer3("or.", 'Z', ASB_A|ASB_S|ASB_B); break;
+        case 01571:
+#ifdef SIMPLIFIED
+        if (DIS_RS == DIS_RB) { integer3("mr.", 'Z', ASB_A|ASB_S); o->iclass |= PPC_DISA_SIMPLIFIED; }
+        else
+#endif
+        integer3("or.", 'Z', ASB_A|ASB_S|ASB_B); break;
         case 01626: integer3("divwu", 'X', DAB_D|DAB_A|DAB_B); break;        // divwux
         case 01626|OE: integer3("divwuo", 'X', DAB_D|DAB_A|DAB_B); break;
         case 01627: integer3("divwu.", 'X', DAB_D|DAB_A|DAB_B); break;
