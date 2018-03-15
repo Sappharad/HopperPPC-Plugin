@@ -556,6 +556,9 @@ static int GetRegisterIndex(DisasmOperandType type)
             if (disasm->instruction.addressValue != 0 && !(disasm->instruction.userData & DISASM_PPC_INST_LOAD_STORE)) {
                 format = Format_Address;
             }
+            else if (disasm->instruction.userData & (DISASM_PPC_INST_ADDI | DISASM_PPC_INST_SUBI | DISASM_PPC_INST_LOAD_STORE)) {
+                format = Format_Hexadecimal | Format_Signed;
+            }
             else {
                 if (operand->userData[0] & DISASM_PPC_OPER_IMM_HEX || llabs(operand->immediateValue) > 255)
                     format = Format_Hexadecimal | Format_Signed;
