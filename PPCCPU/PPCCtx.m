@@ -233,7 +233,11 @@ static ByteType TypeForSize(u32 size)
     // Load/store handling
     if (disasm->instruction.userData & DISASM_PPC_INST_LOAD_STORE && disasm->instruction.addressValue && disasm->operand[2].size) {
         ArgFormat format = Format_Hexadecimal;
-        if (!strncmp(disasm->instruction.mnemonic, "lf", 2) || !strncmp(disasm->instruction.mnemonic, "stf", 2))
+        if (!strcmp(disasm->instruction.mnemonic, "lwz") || !strcmp(disasm->instruction.mnemonic, "stw")) {
+            uint32_t data = [_file readInt32AtVirtualAddress:disasm->instruction.addressValue];
+            if (data >= 0x80000000 && data <= 0x8C000000)
+                format = Format_Address;
+        } else if (!strncmp(disasm->instruction.mnemonic, "lf", 2) || !strncmp(disasm->instruction.mnemonic, "stf", 2))
             format = Format_Float;
         [self addTypeToSet:disasm->instruction.addressValue size:disasm->operand[2].size format:format];
     }
