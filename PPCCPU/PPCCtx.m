@@ -386,6 +386,26 @@ static ByteType TypeForSize(u32 size)
             if (addr != BAD_ADDRESS)
                 working.instruction.addressValue = addr + working.operand[1].immediateValue;
         }
+    } else if (working.instruction.userData & DISASM_PPC_INST_ADDI) {
+        if (working.operand[1].type & DISASM_BUILD_REGISTER_INDEX_MASK(13)) {
+            Address addr = [_file findVirtualAddressNamed:@"_SDA_BASE_"];
+            if (addr != BAD_ADDRESS)
+                working.instruction.addressValue = addr + working.operand[2].immediateValue;
+        } else if (working.operand[1].type & DISASM_BUILD_REGISTER_INDEX_MASK(2)) {
+            Address addr = [_file findVirtualAddressNamed:@"_SDA2_BASE_"];
+            if (addr != BAD_ADDRESS)
+                working.instruction.addressValue = addr + working.operand[2].immediateValue;
+        }
+    } else if (working.instruction.userData & DISASM_PPC_INST_SUBI) {
+        if (working.operand[1].type & DISASM_BUILD_REGISTER_INDEX_MASK(13)) {
+            Address addr = [_file findVirtualAddressNamed:@"_SDA_BASE_"];
+            if (addr != BAD_ADDRESS)
+                working.instruction.addressValue = addr - working.operand[2].immediateValue;
+        } else if (working.operand[1].type & DISASM_BUILD_REGISTER_INDEX_MASK(2)) {
+            Address addr = [_file findVirtualAddressNamed:@"_SDA2_BASE_"];
+            if (addr != BAD_ADDRESS)
+                working.instruction.addressValue = addr - working.operand[2].immediateValue;
+        }
     }
     
     memcpy(disasm, &working, sizeof(working));
