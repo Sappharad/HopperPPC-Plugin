@@ -25,6 +25,8 @@ struct TypeSet {
     NSObject<HPDisassembledFile> *_file;
     bool _trackingLis;
     int32_t lisArr[32];
+    double  mulhwArr[32];
+    int32_t dividendArr[32];
     int32_t stackDisp;
     int32_t indexBaseArr[32];
     int32_t indexBaseCTR;
@@ -44,6 +46,8 @@ struct TypeSet {
         _trackingLis = false;
         for (int i = 0; i < 32; ++i) {
             lisArr[i] = ~0;
+            mulhwArr[i] = 0.0;
+            dividendArr[i] = ~0;
             indexBaseArr[i] = ~0;
         }
         indexBaseCTR = ~0;
@@ -191,7 +195,8 @@ static ByteType TypeForSize(u32 size)
             }
             else
             {
-                [_file setInlineComment:MakeNumericComment((u32)operand->userData[1]) atVirtualAddress:disasm->virtualAddr reason:CCReason_Automatic];
+                [_file setInlineComment:MakeNumericComment((u32)operand->userData[1])
+                       atVirtualAddress:disasm->virtualAddr reason:CCReason_Automatic];
             }
             
             // SDA/SDA2 symbol synthesis
@@ -200,6 +205,43 @@ static ByteType TypeForSize(u32 size)
             else if (disasm->operand[0].type & DISASM_BUILD_REGISTER_INDEX_MASK(2) && segment == _file.firstSegment)
                 foundSDA2 = (u32)operand->userData[1];
             break;
+        }
+    }
+    
+    // Handle MULHW
+    if (disasm->operand[2].userData[0] & DISASM_PPC_OPER_MULHW) {
+        int32_t divConstant = (int32_t)disasm->operand[2].userData[1];
+        if (divConstant != ~0) {
+            double factor = (double)divConstant / (double)(1LL << 32LL);
+            mulhwArr[GetRegisterIndex(disasm->operand[0].type)] = factor;
+            dividendArr[GetRegisterIndex(disasm->operand[0].type)] = GetRegisterIndex(disasm->operand[2].type);
+            double rounded = round(1.0 / factor);
+            if (fabs(rounded - 1.0 / factor) < 0.0001)
+                [_file setInlineComment:[NSString stringWithFormat:@"divide by %g", rounded]
+                       atVirtualAddress:disasm->virtualAddr reason:CCReason_Automatic];
+        }
+    } else if (!strcmp(disasm->instruction.mnemonic, "add")) {
+        int32_t dividend = dividendArr[GetRegisterIndex(disasm->operand[1].type)];
+        if (dividend == GetRegisterIndex(disasm->operand[2].type)) {
+            double factor = mulhwArr[GetRegisterIndex(disasm->operand[1].type)];
+            factor += 1.0;
+            mulhwArr[GetRegisterIndex(disasm->operand[0].type)] = factor;
+            dividendArr[GetRegisterIndex(disasm->operand[0].type)] = dividend;
+            double rounded = round(1.0 / factor);
+            if (fabs(rounded - 1.0 / factor) < 0.0001)
+                [_file setInlineComment:[NSString stringWithFormat:@"divide by %g", rounded]
+                       atVirtualAddress:disasm->virtualAddr reason:CCReason_Automatic];
+        }
+    } else if (!strcmp(disasm->instruction.mnemonic, "srawi")) {
+        int32_t dividend = dividendArr[GetRegisterIndex(disasm->operand[1].type)];
+        if (dividend != ~0) {
+            double factor = mulhwArr[GetRegisterIndex(disasm->operand[1].type)];
+            factor /= (double)(1LL << disasm->operand[2].immediateValue);
+            mulhwArr[GetRegisterIndex(disasm->operand[0].type)] = factor;
+            double rounded = round(1.0 / factor);
+            if (fabs(rounded - 1.0 / factor) < 0.0001)
+                [_file setInlineComment:[NSString stringWithFormat:@"divide by %g", rounded]
+                       atVirtualAddress:disasm->virtualAddr reason:CCReason_Automatic];
         }
     }
     
@@ -276,6 +318,8 @@ static ByteType TypeForSize(u32 size)
     _trackingLis = false;
     for (int i = 0; i < 32; ++i) {
         lisArr[i] = ~0;
+        mulhwArr[i] = 0.0;
+        dividendArr[i] = ~0;
         indexBaseArr[i] = ~0;
     }
     lastCmplwi = 0;
@@ -385,6 +429,26 @@ static ByteType TypeForSize(u32 size)
             Address addr = [_file findVirtualAddressNamed:@"_SDA2_BASE_"];
             if (addr != BAD_ADDRESS)
                 working.instruction.addressValue = addr + working.operand[1].immediateValue;
+        }
+    } else if (working.instruction.userData & DISASM_PPC_INST_ADDI) {
+        if (working.operand[1].type & DISASM_BUILD_REGISTER_INDEX_MASK(13)) {
+            Address addr = [_file findVirtualAddressNamed:@"_SDA_BASE_"];
+            if (addr != BAD_ADDRESS)
+                working.instruction.addressValue = addr + working.operand[2].immediateValue;
+        } else if (working.operand[1].type & DISASM_BUILD_REGISTER_INDEX_MASK(2)) {
+            Address addr = [_file findVirtualAddressNamed:@"_SDA2_BASE_"];
+            if (addr != BAD_ADDRESS)
+                working.instruction.addressValue = addr + working.operand[2].immediateValue;
+        }
+    } else if (working.instruction.userData & DISASM_PPC_INST_SUBI) {
+        if (working.operand[1].type & DISASM_BUILD_REGISTER_INDEX_MASK(13)) {
+            Address addr = [_file findVirtualAddressNamed:@"_SDA_BASE_"];
+            if (addr != BAD_ADDRESS)
+                working.instruction.addressValue = addr - working.operand[2].immediateValue;
+        } else if (working.operand[1].type & DISASM_BUILD_REGISTER_INDEX_MASK(2)) {
+            Address addr = [_file findVirtualAddressNamed:@"_SDA2_BASE_"];
+            if (addr != BAD_ADDRESS)
+                working.instruction.addressValue = addr - working.operand[2].immediateValue;
         }
     }
     

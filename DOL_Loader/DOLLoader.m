@@ -305,6 +305,7 @@ static const struct SectionRange* FindSectionRange(const struct SectionRange* ra
                         Address addr = seg.startAddress + offset;
                         [file setType:Type_Int32 atVirtualAddress:addr forLength:4];
                         [file setFormat:Format_Address forArgument:0 atVirtualAddress:addr];
+                        [seg addReferencesToAddress:data fromAddress:addr];
                     }
                 }
             }

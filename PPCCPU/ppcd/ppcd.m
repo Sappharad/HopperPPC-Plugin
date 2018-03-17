@@ -500,7 +500,7 @@ static void integer(const char *mnem, char form, int dab, int hex, int s, int cr
     else if(form == 'S')
     {
         s32 thisLis = ~0;
-        if (o->lisArr && !strcmp(mnem, "ori"))
+        if (o->lisArr && !strncmp(mnem, "ori", 3))
             thisLis = o->lisArr[DIS_RS];
             
         if(dab & ASB_A)
@@ -532,6 +532,10 @@ static void integer(const char *mnem, char form, int dab, int hex, int s, int cr
     }
     else if(form == 'X')    // DAB
     {
+        s32 thisLis = ~0;
+        if (o->lisArr && !strncmp(mnem, "mulhw", 5))
+            thisLis = o->lisArr[DIS_RA];
+        
         if(dab & DAB_D)
         {
             ptr += sprintf(ptr, "%s", REGD);
@@ -548,6 +552,13 @@ static void integer(const char *mnem, char form, int dab, int hex, int s, int cr
             if(dab & (DAB_D|DAB_A)) ptr += sprintf(ptr, "%s", COMMA);
             ptr += sprintf(ptr, "%s", REGB);
             DISASM_PPC_BUILD_GPR_OP(rb, false);
+        }
+        
+        if (thisLis != ~0)
+        {
+            DisasmOperand* op = &o->disasm->operand[o->opIdx-1];
+            op->userData[0] |= DISASM_PPC_OPER_MULHW;
+            op->userData[1] = thisLis;
         }
     }
     else if(form == 'F')    // FPU DAB

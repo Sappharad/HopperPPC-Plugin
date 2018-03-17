@@ -55,6 +55,7 @@ HP_END_DECL_ENUM(PPCIncrement);
 #define DISASM_PPC_OPER_IMM_HEX 0x1
 #define DISASM_PPC_OPER_LIS_ADDI 0x2
 #define DISASM_PPC_OPER_RLWIMI 0x4
+#define DISASM_PPC_OPER_MULHW 0x8
 
 static inline u32 MASK32VAL(u32 b, u32 e)
 {
