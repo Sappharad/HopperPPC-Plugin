@@ -365,16 +365,18 @@ static const struct SectionRange* FindSectionRange(const struct SectionRange* ra
         } else if (!strcmp(type, "WSTR")) {
             [file setType:Type_Unicode atVirtualAddress:address forLength:arrCount];
         } else if (!strcmp(type, "BYTE")) {
-            [file setType:Type_Int8 atVirtualAddress:address forLength:arrCount ? arrCount : 1];
+            [file setType:Type_Int8 atVirtualAddress:address forLength:(arrCount ? arrCount : 1) * 1];
         } else if (!strcmp(type, "WORD")) {
-            [file setType:Type_Int16 atVirtualAddress:address forLength:arrCount ? arrCount : 2];
+            [file setType:Type_Int16 atVirtualAddress:address forLength:(arrCount ? arrCount : 1) * 2];
         } else if (!strcmp(type, "DWORD")) {
-            [file setType:Type_Int32 atVirtualAddress:address forLength:arrCount ? arrCount : 4];
+            [file setType:Type_Int32 atVirtualAddress:address forLength:(arrCount ? arrCount : 1) * 4];
+        } else if (!strcmp(type, "QWORD")) {
+            [file setType:Type_Int64 atVirtualAddress:address forLength:(arrCount ? arrCount : 1) * 8];
         } else if (!strcmp(type, "FLOAT")) {
-            [file setType:Type_Int32 atVirtualAddress:address forLength:arrCount ? arrCount : 4];
+            [file setType:Type_Int32 atVirtualAddress:address forLength:(arrCount ? arrCount : 1) * 4];
             [file setFormat:Format_Float forArgument:0 atVirtualAddress:address];
         } else if (!strcmp(type, "DOUBLE")) {
-            [file setType:Type_Int64 atVirtualAddress:address forLength:arrCount ? arrCount : 8];
+            [file setType:Type_Int64 atVirtualAddress:address forLength:(arrCount ? arrCount : 1) * 8];
             [file setFormat:Format_Float forArgument:0 atVirtualAddress:address];
         } else if (!strcmp(type, "LVAR")) {
             NSObject<HPProcedure> *proc = [file procedureAt:address];
