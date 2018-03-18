@@ -1921,7 +1921,9 @@ void PPCDisasm(PPCD_CB *discb)
         case 00301: crop3("xor", "clr", 1); break;                           // crxor
         case 00226: put2("isync", 0x3fff801); break;                         // isync
 #ifdef  POWERPC_32
-        case 00062: put("rfi", 0x3fff801, 0, PPC_DISA_OEA | PPC_DISA_BRIDGE ); break; // rfi
+        case 00062: put("rfi", 0x3fff801, 0, PPC_DISA_OEA | PPC_DISA_BRIDGE );
+            o->disasm->instruction.branchType = DISASM_BRANCH_RET;
+            break; // rfi
 #endif
 #ifdef  POWERPC_64
         case 00022: put("rfid", 0x3fff801, 0, PPC_DISA_OEA | PPC_DISA_64 ); break; // rfid

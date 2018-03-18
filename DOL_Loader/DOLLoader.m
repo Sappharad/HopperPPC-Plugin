@@ -255,6 +255,7 @@ static const struct SectionRange* FindSectionRange(const struct SectionRange* ra
     bssLength = range->length;
     if(bssLocation >= 0x80000000 && bssLocation <= 0x8C000000 && bssLength > 0){
         NSObject<HPSegment> *segment = [file addSegmentAt:bssLocation size:bssLength];
+        [segment setMappedData:[NSMutableData dataWithLength:bssLength]];
         NSObject<HPSection> *section = [segment addSectionAt:bssLocation size:bssLength];
         segment.segmentName = @"BSS";
         section.sectionName = @"bss";
@@ -276,6 +277,7 @@ static const struct SectionRange* FindSectionRange(const struct SectionRange* ra
             uint32_t sbssLocation = range1->start + range1->length;
             uint32_t sbssLength = range2->start - sbssLocation;
             NSObject<HPSegment> *segment = [file addSegmentAt:sbssLocation size:sbssLength];
+            [segment setMappedData:[NSMutableData dataWithLength:sbssLength]];
             NSObject<HPSection> *section = [segment addSectionAt:sbssLocation size:sbssLength];
             segment.segmentName = @"SBSS";
             section.sectionName = @"sbss";
