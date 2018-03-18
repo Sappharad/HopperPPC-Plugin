@@ -34,10 +34,10 @@ The license for that is listed as "free opensource". This is too.
 The DOL loading code is original, but the file format is very simple.
 
 # macOS install
-1. Checkout or download this repository into a subfolder of your Hopper SDK download so the XCode project can find the includes.
-2. Open the XCode Project.
-3. Build the XCode Project.
-4. That's it. Building the project will install it into the plugins directory.
+1. Checkout or download this repository into a subfolder of your Hopper SDK download so the XCode projects can find the includes.
+2. Open each XCode Project.
+3. Build each XCode Project.
+4. That's it. Building the plugins will install them into the plugins directory.
 
 # Linux install
 1. Checkout or download this repository into a subfolder of your Hopper SDK download.
