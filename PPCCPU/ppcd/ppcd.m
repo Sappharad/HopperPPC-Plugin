@@ -273,7 +273,7 @@ static void DISASM_PPC_BUILD_SPR_OP(int idx, bool write)
     DisasmOperand* op = &o->disasm->operand[o->opIdx++];
     op->type = DISASM_OPERAND_OTHER;
     op->type |= DISASM_BUILD_REGISTER_CLS_MASK(RegClass_SPRegister);
-    strcpy(op->userString, spr_name(idx));
+    strcpy(op->userString + 8, spr_name(idx));
     if (write) {
         op->accessMode = DISASM_ACCESS_WRITE;
     } else {
@@ -286,7 +286,7 @@ static void DISASM_PPC_BUILD_TBR_OP(int idx, bool write)
     DisasmOperand* op = &o->disasm->operand[o->opIdx++];
     op->type = DISASM_OPERAND_OTHER;
     op->type |= DISASM_BUILD_REGISTER_CLS_MASK(RegClass_TBRegister);
-    strcpy(op->userString, tbr_name(idx));
+    strcpy(op->userString + 8, tbr_name(idx));
     if (write) {
         op->accessMode = DISASM_ACCESS_WRITE;
     } else {
