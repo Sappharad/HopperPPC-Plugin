@@ -11,15 +11,15 @@
 #ifdef LINUX
 #include <endian.h>
 
-int16_t OSReadBigInt16(const void *address, uintptr_t offset) {
+static int16_t OSReadBigInt16(const void *address, uintptr_t offset) {
     return be16toh(*(int16_t *) ((uintptr_t) address + offset));
 }
 
-int32_t OSReadBigInt32(const void *address, uintptr_t offset) {
+static int32_t OSReadBigInt32(const void *address, uintptr_t offset) {
     return be32toh(*(int32_t *) ((uintptr_t) address + offset));
 }
 
-void OSWriteBigInt32(void *address, uintptr_t offset, int32_t data) {
+static void OSWriteBigInt32(void *address, uintptr_t offset, int32_t data) {
     *(int32_t *) ((uintptr_t) address + offset) = htobe32(data);
 }
 
@@ -255,6 +255,7 @@ static const struct SectionRange* FindSectionRange(const struct SectionRange* ra
     bssLength = range->length;
     if(bssLocation >= 0x80000000 && bssLocation <= 0x8C000000 && bssLength > 0){
         NSObject<HPSegment> *segment = [file addSegmentAt:bssLocation size:bssLength];
+        [segment setMappedData:[NSMutableData dataWithLength:bssLength]];
         NSObject<HPSection> *section = [segment addSectionAt:bssLocation size:bssLength];
         segment.segmentName = @"BSS";
         section.sectionName = @"bss";
@@ -276,6 +277,7 @@ static const struct SectionRange* FindSectionRange(const struct SectionRange* ra
             uint32_t sbssLocation = range1->start + range1->length;
             uint32_t sbssLength = range2->start - sbssLocation;
             NSObject<HPSegment> *segment = [file addSegmentAt:sbssLocation size:sbssLength];
+            [segment setMappedData:[NSMutableData dataWithLength:sbssLength]];
             NSObject<HPSection> *section = [segment addSectionAt:sbssLocation size:sbssLength];
             segment.segmentName = @"SBSS";
             section.sectionName = @"sbss";
@@ -365,16 +367,18 @@ static const struct SectionRange* FindSectionRange(const struct SectionRange* ra
         } else if (!strcmp(type, "WSTR")) {
             [file setType:Type_Unicode atVirtualAddress:address forLength:arrCount];
         } else if (!strcmp(type, "BYTE")) {
-            [file setType:Type_Int8 atVirtualAddress:address forLength:arrCount ? arrCount : 1];
+            [file setType:Type_Int8 atVirtualAddress:address forLength:(arrCount ? arrCount : 1) * 1];
         } else if (!strcmp(type, "WORD")) {
-            [file setType:Type_Int16 atVirtualAddress:address forLength:arrCount ? arrCount : 2];
+            [file setType:Type_Int16 atVirtualAddress:address forLength:(arrCount ? arrCount : 1) * 2];
         } else if (!strcmp(type, "DWORD")) {
-            [file setType:Type_Int32 atVirtualAddress:address forLength:arrCount ? arrCount : 4];
+            [file setType:Type_Int32 atVirtualAddress:address forLength:(arrCount ? arrCount : 1) * 4];
+        } else if (!strcmp(type, "QWORD")) {
+            [file setType:Type_Int64 atVirtualAddress:address forLength:(arrCount ? arrCount : 1) * 8];
         } else if (!strcmp(type, "FLOAT")) {
-            [file setType:Type_Int32 atVirtualAddress:address forLength:arrCount ? arrCount : 4];
+            [file setType:Type_Int32 atVirtualAddress:address forLength:(arrCount ? arrCount : 1) * 4];
             [file setFormat:Format_Float forArgument:0 atVirtualAddress:address];
         } else if (!strcmp(type, "DOUBLE")) {
-            [file setType:Type_Int64 atVirtualAddress:address forLength:arrCount ? arrCount : 8];
+            [file setType:Type_Int64 atVirtualAddress:address forLength:(arrCount ? arrCount : 1) * 8];
             [file setFormat:Format_Float forArgument:0 atVirtualAddress:address];
         } else if (!strcmp(type, "LVAR")) {
             NSObject<HPProcedure> *proc = [file procedureAt:address];
