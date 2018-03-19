@@ -37,7 +37,7 @@ static int bigendian = -1;  // Autodetect.
 // Implementation. Look away, code is messed :)
 // Dont miss 'l' and '1'.
 
-static PPCD_CB *o;
+_Thread_local static PPCD_CB *o;
 #define Instr   (o->instr)
 #define DIS_PC  (o->pc)
 
