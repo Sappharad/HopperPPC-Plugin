@@ -16,6 +16,7 @@
 #import <Hopper/HPBasicBlock.h>
 #import <Hopper/HPCallReference.h>
 #import <Hopper/CPUContext.h>
+#import <dispatch/dispatch.h>
 
 #ifdef __APPLE__
 #define YES_CONSTANT 1000
@@ -451,6 +452,7 @@ struct rel_relocation_entry
                              alternateButton:nil
                                  otherButton:nil
                              informativeText:@"Unable to find \"unnamed segment\" containing REL data"];
+            [doc endWaiting];
             return;
         }
         
@@ -488,7 +490,7 @@ struct rel_relocation_entry
 }
 
 - (NSString *)pluginDescription {
-    return @"REL Linker";
+    return @"Dolphin Relocatable (REL) Linker";
 }
 
 - (NSString *)pluginAuthor {
