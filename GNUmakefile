@@ -1,6 +1,6 @@
 include $(GNUSTEP_MAKEFILES)/common.make
 
-COMMON_OBJC_FLAGS = -I../include -DLINUX -Wno-format -fblocks -fobjc-nonfragile-abi -fobjc-arc
+COMMON_OBJC_FLAGS = -I../include -DLINUX -Wno-format -fblocks -fobjc-nonfragile-abi -fobjc-arc -O3
 
 BUNDLE_NAME = PPCCPU DOL_Loader REL_Linker
 

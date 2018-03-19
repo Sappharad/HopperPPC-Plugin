@@ -17,6 +17,12 @@
 #import <Hopper/HPCallReference.h>
 #import <Hopper/CPUContext.h>
 
+#ifdef __APPLE__
+#define YES_CONSTANT 1000
+#else
+#define YES_CONSTANT 1
+#endif
+
 #if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
 static inline int16_t _bswap16(int16_t v) {
     return __builtin_bswap16(v);
@@ -184,7 +190,8 @@ struct rel_relocation_entry
 - (void)recursiveMakeProcedures:(NSObject<HPProcedure>*)proc file:(NSObject<HPDisassembledFile>*)file {
     if (!proc)
         return;
-    for (NSObject<HPCallReference> *cref in proc.allCallees) {
+    NSArray<HPCallReference> *callees = [proc.allCallees copy];
+    for (NSObject<HPCallReference> *cref in callees) {
         if (![file hasProcedureAt:cref.to])
             [self recursiveMakeProcedures:[file makeProcedureAt:cref.to] file:file];
     }
@@ -409,6 +416,7 @@ struct rel_relocation_entry
 - (void)linkREL:(id)sender {
     NSObject<HPDocument> *doc = [_services currentDocument];
     NSMutableArray<HPSegment> *linkedSegments = [NSMutableArray<HPSegment> new];
+    bool found = false;
     for (NSObject<HPSegment> *seg in doc.disassembledFile.segments) {
         if ([seg.segmentName isEqualToString:@"unnamed segment"]) {
             const void *bytes = seg.mappedData.bytes;
@@ -432,25 +440,30 @@ struct rel_relocation_entry
                                                     otherButton:nil
                                                 informativeText:
                                 [NSString stringWithFormat:@"Found REL data at 0x%" PRIX64 ". Link?", seg.startAddress]];
-            if (result == 1000) {
-                // First pass creates Hopper sections
-                [self _prelinkREL:seg file:doc.disassembledFile];
+            found = true;
+            if (result == YES_CONSTANT)
                 [linkedSegments addObject:seg];
-            }
         }
+    }
+
+    if (!found) {
+        [doc displayAlertWithMessageText:@"Unnamed REL segment not detected"
+                           defaultButton:@"OK"
+                         alternateButton:nil
+                             otherButton:nil
+                         informativeText:@"Unable to find \"unnamed segment\" containing REL data"];
+        return;
+    }
+
+    for (NSObject<HPSegment> *seg in linkedSegments) {
+        // First pass creates Hopper sections
+        [self _prelinkREL:seg file:doc.disassembledFile];
     }
     
     for (NSObject<HPSegment> *seg in linkedSegments) {
         // Second pass resolves relocations from all candidate REL modules
         [self _linkREL:seg file:doc.disassembledFile];
     }
-    
-    if (!linkedSegments.count)
-        [doc displayAlertWithMessageText:@"Unnamed REL segment not detected"
-                           defaultButton:@"OK"
-                         alternateButton:nil
-                             otherButton:nil
-                         informativeText:@"Unable to find \"unnamed segment\" containing REL data"];
 }
 
 - (instancetype)initWithHopperServices:(NSObject <HPHopperServices> *)services {

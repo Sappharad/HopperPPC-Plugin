@@ -9,6 +9,23 @@
 #import "PPCCPU.h"
 #import "PPCCtx.h"
 
+#ifdef LINUX
+#include <endian.h>
+
+int16_t OSReadBigInt16(const void *address, uintptr_t offset) {
+    return be16toh(*(int16_t *) ((uintptr_t) address + offset));
+}
+
+int32_t OSReadBigInt32(const void *address, uintptr_t offset) {
+    return be32toh(*(int32_t *) ((uintptr_t) address + offset));
+}
+
+void OSWriteBigInt32(void *address, uintptr_t offset, int32_t data) {
+    *(int32_t *) ((uintptr_t) address + offset) = htobe32(data);
+}
+
+#endif
+
 @implementation PPCCPU {
     NSObject<HPHopperServices> *_services;
 }
