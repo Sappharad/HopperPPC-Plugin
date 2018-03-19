@@ -648,7 +648,7 @@ static int GetRegisterIndex(DisasmOperandType type)
                     andIndex:regIdx];
     }
     else if (operand->type & DISASM_OPERAND_OTHER) {
-        [line appendRegister:@(operand->userString)];
+        [line appendRegister:@(operand->userString + 8)];
     }
     
     [line setIsOperand:operandIndex startingAtIndex:0];
@@ -691,7 +691,7 @@ static const char* CRNames[] =
         op_index = 3;
     }
     
-    for (; op_index<=DISASM_MAX_OPERANDS; op_index++) {
+    for (; op_index<DISASM_MAX_OPERANDS; op_index++) {
         NSObject<HPASMLine> *part = [self buildOperandString:disasm forOperandIndex:op_index inFile:file raw:raw];
         if (part == nil) break;
         if (op_index) [line appendRawString:@", "];
