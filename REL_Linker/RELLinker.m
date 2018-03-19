@@ -2,8 +2,8 @@
 //  RELLinker.m
 //  RELLinker
 //
-//  Created by Vincent Bénony on 06/03/2014.
-//  Copyright (c) 2014 Cryptic Apps. All rights reserved.
+//  Created by Jack Andersen on 18/03/2018.
+//  Copyright (c) 2018 Jack Andersen. All rights reserved.
 //
 
 #import "RELLinker.h"
@@ -133,8 +133,7 @@ struct rel_relocation_entry
 
 - (void)_prelinkREL:(NSObject<HPSegment>*)segment file:(NSObject<HPDisassembledFile>*)file {
     [_services.currentDocument beginToWait:@"Pre-Linking REL"];
-    NSMutableData* mutable = [segment.mappedData mutableCopy];
-    void *bytes = mutable.mutableBytes;
+    const void *bytes = segment.mappedData.bytes;
     
     // Initial metadata
     segment.readable = YES;

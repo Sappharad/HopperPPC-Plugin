@@ -1,9 +1,9 @@
 //
-//  SampleTool.h
-//  SampleTool
+//  RELLinker.h
+//  RELLinker
 //
-//  Created by Vincent Bénony on 06/03/2014.
-//  Copyright (c) 2014 Cryptic Apps. All rights reserved.
+//  Created by Jack Andersen on 18/03/2018.
+//  Copyright (c) 2018 Jack Andersen. All rights reserved.
 //
 
 #import <Foundation/Foundation.h>
