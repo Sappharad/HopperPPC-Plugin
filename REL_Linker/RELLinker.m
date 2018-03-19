@@ -412,15 +412,16 @@ struct rel_relocation_entry
     for (NSObject<HPSegment> *seg in doc.disassembledFile.segments) {
         if ([seg.segmentName isEqualToString:@"unnamed segment"]) {
             const void *bytes = seg.mappedData.bytes;
-            uint32_t module_id = OSReadBigInt32(bytes, 0);
-            if (module_id == 0 || OSReadBigInt32(bytes, 4) != 0 || OSReadBigInt32(bytes, 8) != 0)
+            const struct relhdr *header = bytes;
+            uint32_t module_id = _bswap32(header->info.module_id);
+            if (module_id == 0 || _bswap32(header->info.prev) != 0 || _bswap32(header->info.next) != 0)
                 continue;
-            uint32_t version = OSReadBigInt32(bytes, 28);
+            uint32_t version = _bswap32(header->info.version);
             if (version != 1 && version != 2 && version != 3)
                 continue;
             
-            uint32_t sectionInfoOff = OSReadBigInt32(bytes, 16);
-            uint32_t importTableOff = OSReadBigInt32(bytes, 40);
+            uint32_t sectionInfoOff = _bswap32(header->info.section_offset);
+            uint32_t importTableOff = _bswap32(header->import_offset);
             if (sectionInfoOff >= seg.mappedData.length || importTableOff >= seg.mappedData.length)
                 continue;
             
