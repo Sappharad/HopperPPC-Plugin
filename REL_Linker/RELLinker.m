@@ -16,6 +16,7 @@
 #import <Hopper/HPBasicBlock.h>
 #import <Hopper/HPCallReference.h>
 #import <Hopper/CPUContext.h>
+#import <dispatch/dispatch.h>
 
 #ifdef __APPLE__
 #define YES_CONSTANT 1000
@@ -132,7 +133,6 @@ struct rel_relocation_entry
 }
 
 - (void)_prelinkREL:(NSObject<HPSegment>*)segment file:(NSObject<HPDisassembledFile>*)file {
-    [_services.currentDocument beginToWait:@"Pre-Linking REL"];
     const void *bytes = segment.mappedData.bytes;
     
     // Initial metadata
@@ -147,6 +147,7 @@ struct rel_relocation_entry
         bssAlign = _bswap32(header->bss_align);
     uint32_t bssSize = _bswap32(header->bss_size);
     segment.segmentName = [NSString stringWithFormat:@"REL%u", moduleId];
+    [_services.currentDocument beginToWait:[NSString stringWithFormat:@"Pre-Linking %@", segment.segmentName]];
 
     // BSS starts here
     NSUInteger bssStart = (file.lastSegment.endAddress + bssAlign - 1) / bssAlign * bssAlign;
@@ -182,8 +183,6 @@ struct rel_relocation_entry
             }
         }
     }
-    
-    [_services.currentDocument endWaiting];
 }
 
 - (void)recursiveMakeProcedures:(NSObject<HPProcedure>*)proc file:(NSObject<HPDisassembledFile>*)file {
@@ -197,7 +196,7 @@ struct rel_relocation_entry
 }
 
 - (void)_linkREL:(NSObject<HPSegment>*)segment file:(NSObject<HPDisassembledFile>*)file {
-    [_services.currentDocument beginToWait:@"Linking REL"];
+    [_services.currentDocument beginToWait:[NSString stringWithFormat:@"Linking %@", segment.segmentName]];
     NSMutableData* mutable = [segment.mappedData mutableCopy];
     void *bytes = mutable.mutableBytes;
     
@@ -262,7 +261,7 @@ struct rel_relocation_entry
             }
             codePtr += advancement;
             Address thisAddr = segment.startAddress + (codePtr - bytes);
-            [[_services currentDocument] logInfoMessage:[NSString stringWithFormat:@"RELOC %08X %d %08X", (uint32_t)thisAddr, relocation->type, offset]];
+            //[[_services currentDocument] logInfoMessage:[NSString stringWithFormat:@"RELOC %08X %d %08X", (uint32_t)thisAddr, relocation->type, offset]];
             switch (relocation->type) {
             default:
                 break;
@@ -339,6 +338,8 @@ struct rel_relocation_entry
         }
     }
     
+    [_services.currentDocument beginToWait:[NSString stringWithFormat:@"Analyzing %@", segment.segmentName]];
+    
     // Apply relocated data
     [segment setMappedData:mutable];
     
@@ -408,61 +409,65 @@ struct rel_relocation_entry
             }
         }
     }
-    
-    [_services.currentDocument endWaiting];
 }
 
 - (void)linkREL:(id)sender {
-    NSObject<HPDocument> *doc = [_services currentDocument];
-    NSMutableArray<HPSegment> *linkedSegments = [NSMutableArray<HPSegment> new];
-    bool found = false;
-    for (NSObject<HPSegment> *seg in doc.disassembledFile.segments) {
-        if ([seg.segmentName isEqualToString:@"unnamed segment"]) {
-            const void *bytes = seg.mappedData.bytes;
-            const struct relhdr *header = bytes;
-            uint32_t module_id = _bswap32(header->info.module_id);
-            if (module_id == 0 || _bswap32(header->info.prev) != 0 || _bswap32(header->info.next) != 0)
-                continue;
-            uint32_t version = _bswap32(header->info.version);
-            if (version != 1 && version != 2 && version != 3)
-                continue;
-            
-            uint32_t sectionInfoOff = _bswap32(header->info.section_offset);
-            uint32_t importTableOff = _bswap32(header->import_offset);
-            if (sectionInfoOff >= seg.mappedData.length || importTableOff >= seg.mappedData.length)
-                continue;
-            
-            // Valid REL
-            NSInteger result = [doc displayAlertWithMessageText:@"Detected REL"
-                                                  defaultButton:@"Yes"
-                                                alternateButton:@"No"
-                                                    otherButton:nil
-                                                informativeText:
-                                [NSString stringWithFormat:@"Found REL data at 0x%" PRIX64 ". Link?", seg.startAddress]];
-            found = true;
-            if (result == YES_CONSTANT)
-                [linkedSegments addObject:seg];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        NSObject<HPDocument> *doc = [_services currentDocument];
+        [doc beginToWait:@"Finding REL Data"];
+        NSMutableArray<HPSegment> *linkedSegments = [NSMutableArray<HPSegment> new];
+        bool found = false;
+        for (NSObject<HPSegment> *seg in doc.disassembledFile.segments) {
+            if ([seg.segmentName isEqualToString:@"unnamed segment"]) {
+                const void *bytes = seg.mappedData.bytes;
+                const struct relhdr *header = bytes;
+                uint32_t module_id = _bswap32(header->info.module_id);
+                if (module_id == 0 || _bswap32(header->info.prev) != 0 || _bswap32(header->info.next) != 0)
+                    continue;
+                uint32_t version = _bswap32(header->info.version);
+                if (version != 1 && version != 2 && version != 3)
+                    continue;
+                
+                uint32_t sectionInfoOff = _bswap32(header->info.section_offset);
+                uint32_t importTableOff = _bswap32(header->import_offset);
+                if (sectionInfoOff >= seg.mappedData.length || importTableOff >= seg.mappedData.length)
+                    continue;
+                
+                // Valid REL
+                NSInteger result = [doc displayAlertWithMessageText:@"Detected REL"
+                                                      defaultButton:@"Yes"
+                                                    alternateButton:@"No"
+                                                        otherButton:nil
+                                                    informativeText:
+                                    [NSString stringWithFormat:@"Found REL data at 0x%" PRIX64 ". Link?", seg.startAddress]];
+                found = true;
+                if (result == YES_CONSTANT)
+                    [linkedSegments addObject:seg];
+            }
         }
-    }
-
-    if (!found) {
-        [doc displayAlertWithMessageText:@"Unnamed REL segment not detected"
-                           defaultButton:@"OK"
-                         alternateButton:nil
-                             otherButton:nil
-                         informativeText:@"Unable to find \"unnamed segment\" containing REL data"];
-        return;
-    }
-
-    for (NSObject<HPSegment> *seg in linkedSegments) {
-        // First pass creates Hopper sections
-        [self _prelinkREL:seg file:doc.disassembledFile];
-    }
-    
-    for (NSObject<HPSegment> *seg in linkedSegments) {
-        // Second pass resolves relocations from all candidate REL modules
-        [self _linkREL:seg file:doc.disassembledFile];
-    }
+        
+        if (!found) {
+            [doc displayAlertWithMessageText:@"Unnamed REL segment not detected"
+                               defaultButton:@"OK"
+                             alternateButton:nil
+                                 otherButton:nil
+                             informativeText:@"Unable to find \"unnamed segment\" containing REL data"];
+            [doc endWaiting];
+            return;
+        }
+        
+        for (NSObject<HPSegment> *seg in linkedSegments) {
+            // First pass creates Hopper sections
+            [self _prelinkREL:seg file:doc.disassembledFile];
+        }
+        
+        for (NSObject<HPSegment> *seg in linkedSegments) {
+            // Second pass resolves relocations from all candidate REL modules
+            [self _linkREL:seg file:doc.disassembledFile];
+        }
+        
+        [doc endWaiting];
+    });
 }
 
 - (instancetype)initWithHopperServices:(NSObject <HPHopperServices> *)services {
@@ -485,7 +490,7 @@ struct rel_relocation_entry
 }
 
 - (NSString *)pluginDescription {
-    return @"REL Linker";
+    return @"Dolphin Relocatable (REL) Linker";
 }
 
 - (NSString *)pluginAuthor {
