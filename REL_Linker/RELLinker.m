@@ -108,6 +108,8 @@ enum PPCRelocationType
     R_PPC_ADDR14_BRNTAKEN,
     R_PPC_REL24,
     R_PPC_REL14,
+    R_PPC_REL14_BRTAKEN,
+    R_PPC_REL14_BRNTAKEN,
     R_DOLPHIN_NOP = 201,
     R_DOLPHIN_SECTION = 202,
     R_DOLPHIN_END = 203
@@ -321,6 +323,20 @@ struct rel_relocation_entry
             case R_PPC_REL14: {
                 uint32_t inst = _bswap32(*(uint32_t*)codePtr);
                 inst &= 0xFFFF0003;
+                inst |= ((int64_t)offset - (int64_t)thisAddr) & 0xFFFC;
+                *(uint32_t*)codePtr = _bswap32(inst);
+                break;
+            }
+            case R_PPC_REL14_BRTAKEN: {
+                uint32_t inst = _bswap32(*(uint32_t*)codePtr);
+                inst &= 0xFFFF0003;
+                inst |= (((int64_t)offset - (int64_t)thisAddr) & 0xFFFC) | 0x200000;
+                *(uint32_t*)codePtr = _bswap32(inst);
+                break;
+            }
+            case R_PPC_REL14_BRNTAKEN: {
+                uint32_t inst = _bswap32(*(uint32_t*)codePtr);
+                inst &= 0xFFDF0003;
                 inst |= ((int64_t)offset - (int64_t)thisAddr) & 0xFFFC;
                 *(uint32_t*)codePtr = _bswap32(inst);
                 break;
