@@ -18,6 +18,8 @@
 #include "ppcd.h"
 #include "../PPCCPU.h"
 
+#pragma GCC diagnostic ignored "-Wunused-function"
+
 #define POWERPC_32      // Use generic 32-bit model
 //efine POWERPC_64      // Use generic 64-bit model
 #define GEKKO           // Use Gekko (32-bit ISA)
@@ -702,7 +704,7 @@ static void addi(const char *suffix)
             op->userData[0] |= DISASM_PPC_OPER_IMM_HEX;
             op->userData[1] = thisLis - op->immediateValue;
             o->disasm->instruction.addressValue = op->userData[1];
-            o->lisArr[DIS_RD] = op->userData[1];
+            o->lisArr[DIS_RD] = (s32)op->userData[1];
         }
     }
     else
@@ -726,7 +728,7 @@ static void addi(const char *suffix)
             op->userData[0] |= DISASM_PPC_OPER_IMM_HEX;
             op->userData[1] = thisLis + op->immediateValue;
             o->disasm->instruction.addressValue = op->userData[1];
-            o->lisArr[DIS_RD] = op->userData[1];
+            o->lisArr[DIS_RD] = (s32)op->userData[1];
         }
     }
 #else
@@ -772,7 +774,7 @@ static char *place_target(char *ptr, int comma)
     if(comma) ptr += sprintf(ptr, "%s", COMMA);
     old = ptr;
 #ifdef  POWERPC_32
-    ptr += sprintf(ptr, HEX1 "%08lX" HEX2, (u32)o->target);
+    ptr += sprintf(ptr, HEX1 "%08X" HEX2, (u32)o->target);
 #endif
 #ifdef  POWERPC_64
     ptr = old;
@@ -941,7 +943,7 @@ static void mcrf(void)
 {
     if(Instr & 0x63f801) { ill(); return; }
     copy_mnemonic("mcrf");
-    sprintf(o->operands, "%s%lu" COMMA "%s%lu", crname, DIS_RD >> 2, crname, DIS_RA >> 2);
+    sprintf(o->operands, "%s%u" COMMA "%s%u", crname, DIS_RD >> 2, crname, DIS_RA >> 2);
     DISASM_PPC_BUILD_CR_OP(DIS_RD >> 2, true);
     DISASM_PPC_BUILD_CR_OP(DIS_RA >> 2, false);
 }
@@ -1055,7 +1057,7 @@ static void rlw(const char *name, int rb, int ins)
             {
                 // rotrwi
                 format_mnemonic("rotrwi%c", Rc ? '.' : '\0');
-                ptr += sprintf(ptr, "%s" COMMA "%s" COMMA "%lu", REGA, REGS, 32 - DIS_RB);
+                ptr += sprintf(ptr, "%s" COMMA "%s" COMMA "%u", REGA, REGS, 32 - DIS_RB);
                 DISASM_PPC_BUILD_GPR_OP(DIS_RA, true);
                 DISASM_PPC_BUILD_GPR_OP(DIS_RS, false);
                 DISASM_PPC_BUILD_IMM_OP(32 - DIS_RB, false);
@@ -1070,7 +1072,7 @@ static void rlw(const char *name, int rb, int ins)
             {
                 // rotlwi
                 format_mnemonic("rotlwi%c", Rc ? '.' : '\0');
-                ptr += sprintf(ptr, "%s" COMMA "%s" COMMA "%lu", REGA, REGS, DIS_RB);
+                ptr += sprintf(ptr, "%s" COMMA "%s" COMMA "%u", REGA, REGS, DIS_RB);
                 DISASM_PPC_BUILD_GPR_OP(DIS_RA, true);
                 DISASM_PPC_BUILD_GPR_OP(DIS_RS, false);
                 DISASM_PPC_BUILD_IMM_OP(DIS_RB, false);
@@ -1088,7 +1090,7 @@ static void rlw(const char *name, int rb, int ins)
         {
             // slwi
             format_mnemonic("slwi%c", Rc ? '.' : '\0');
-            ptr += sprintf(ptr, "%s" COMMA "%s" COMMA "%lu", REGA, REGS, DIS_RB);
+            ptr += sprintf(ptr, "%s" COMMA "%s" COMMA "%u", REGA, REGS, DIS_RB);
             DISASM_PPC_BUILD_GPR_OP(DIS_RA, true);
             DISASM_PPC_BUILD_GPR_OP(DIS_RS, false);
             DISASM_PPC_BUILD_IMM_OP(DIS_RB, false);
@@ -1123,7 +1125,7 @@ static void rlw(const char *name, int rb, int ins)
             // extlwi
             format_mnemonic("extlwi%c", Rc ? '.' : '\0');
             int n = me + 1;
-            ptr += sprintf(ptr, "%s" COMMA "%s" COMMA "%d" COMMA "%lu", REGA, REGS, n, DIS_RB);
+            ptr += sprintf(ptr, "%s" COMMA "%s" COMMA "%d" COMMA "%u", REGA, REGS, n, DIS_RB);
             DISASM_PPC_BUILD_GPR_OP(DIS_RA, true);
             DISASM_PPC_BUILD_GPR_OP(DIS_RS, false);
             DISASM_PPC_BUILD_IMM_OP(n, false);
@@ -1173,7 +1175,7 @@ static void rlw(const char *name, int rb, int ins)
     }
     else
     {
-        ptr += sprintf(ptr, "%lu" COMMA, DIS_RB);     // sh
+        ptr += sprintf(ptr, "%u" COMMA, DIS_RB);     // sh
         DISASM_PPC_BUILD_IMM_OP(DIS_RB, false);
     }
     ptr += sprintf(ptr, "%i" COMMA "%i", mb, me);
@@ -1430,7 +1432,7 @@ static void mcrxr(void)
 {
     if (Instr & 0x007FF800) { ill(); return; }
     copy_mnemonic("mcrxr");
-    sprintf (o->operands, "%s%lu", crname, DIS_RD >> 2);
+    sprintf (o->operands, "%s%u", crname, DIS_RD >> 2);
     DISASM_PPC_BUILD_CR_OP(DIS_RD >> 2, true);
     o->r[0] = DIS_RD >> 2;
 }
@@ -1713,12 +1715,12 @@ static char *ps_ldst_offs(unsigned long val)
     {
         if(val <= 128)
         {
-            sprintf(buf, "%i", val);
+            sprintf(buf, "%lu", val);
             return buf;
         }
 
-        if(val & 0x800) sprintf(buf, "-" HEX1 "%03X" HEX2, ((~val) & 0xfff) + 1);
-        else sprintf(buf, HEX1 "%03X" HEX2, val);
+        if(val & 0x800) sprintf(buf, "-" HEX1 "%03lX" HEX2, ((~val) & 0xfff) + 1);
+        else sprintf(buf, HEX1 "%03lX" HEX2, val);
 
         return buf;
     }
@@ -2521,6 +2523,6 @@ char *PPCDisasmSimple(u64 pc, u32 instr)
     dis_out.instr = instr;
 
     PPCDisasm(&dis_out);
-    sprintf(output, "%08llX  %08lX  %-10s %s", pc, instr, dis_out.mnemonic, dis_out.operands);
+    sprintf(output, "%08llX  %08X  %-10s %s", pc, instr, dis_out.mnemonic, dis_out.operands);
     return output;
 }

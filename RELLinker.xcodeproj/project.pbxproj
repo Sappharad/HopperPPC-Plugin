@@ -113,7 +113,7 @@
 			isa = PBXProject;
 			attributes = {
 				LastUpgradeCheck = 0900;
-				ORGANIZATIONNAME = "Cryptic Apps";
+				ORGANIZATIONNAME = com.sappharad;
 			};
 			buildConfigurationList = 07AC765E18C8CB9A007D5414 /* Build configuration list for PBXProject "RELLinker" */;
 			compatibilityVersion = "Xcode 3.2";
@@ -287,7 +287,7 @@
 				);
 				INFOPLIST_FILE = "REL_Linker/RELLinker-Info.plist";
 				INSTALL_PATH = "$(USER_LIBRARY_DIR)/Application Support/Hopper/PlugIns/v4/Tools";
-				PRODUCT_BUNDLE_IDENTIFIER = "com.cryptic-apps.${PRODUCT_NAME:rfc1034identifier}";
+				PRODUCT_BUNDLE_IDENTIFIER = com.sappharad.RELLinker;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				WRAPPER_EXTENSION = hopperTool;
 			};
@@ -306,7 +306,7 @@
 				);
 				INFOPLIST_FILE = "REL_Linker/RELLinker-Info.plist";
 				INSTALL_PATH = "$(USER_LIBRARY_DIR)/Application Support/Hopper/PlugIns/v4/Tools";
-				PRODUCT_BUNDLE_IDENTIFIER = "com.cryptic-apps.${PRODUCT_NAME:rfc1034identifier}";
+				PRODUCT_BUNDLE_IDENTIFIER = com.sappharad.RELLinker;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				WRAPPER_EXTENSION = hopperTool;
 			};

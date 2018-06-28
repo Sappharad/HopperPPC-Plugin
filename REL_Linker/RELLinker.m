@@ -502,7 +502,7 @@ struct rel_relocation_entry
 }
 
 - (NSString *)pluginName {
-    return @"RELLinker";
+    return @"REL Linker";
 }
 
 - (NSString *)pluginDescription {
@@ -514,11 +514,15 @@ struct rel_relocation_entry
 }
 
 - (NSString *)pluginCopyright {
-    return @"©2018 - Jack Andersen";
+    return @"© Jack Andersen";
 }
 
 - (NSString *)pluginVersion {
     return @"0.0.1";
+}
+
+- (NSString *)commandLineIdentifier {
+    return @"REL";
 }
 
 @end
