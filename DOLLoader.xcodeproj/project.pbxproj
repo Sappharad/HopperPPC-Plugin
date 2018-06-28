@@ -66,8 +66,7 @@
 				076B714A18C4D1A900DE7FD0 /* DOLLoader.h */,
 				076B714B18C4D1A900DE7FD0 /* DOLLoader.m */,
 			);
-			name = DOLLoader;
-			path = DOL_Loader;
+			path = DOLLoader;
 			sourceTree = "<group>";
 		};
 		076B713F18C4D07F00DE7FD0 /* Supporting Files */ = {

@@ -70,8 +70,7 @@
 				07AC767418C8CBC8007D5414 /* RELLinker.h */,
 				07AC767518C8CBC8007D5414 /* RELLinker.m */,
 			);
-			name = RELLinker;
-			path = REL_Linker;
+			path = RELLinker;
 			sourceTree = "<group>";
 		};
 		07AC766918C8CB9A007D5414 /* Supporting Files */ = {
