@@ -772,4 +772,12 @@ static const char* CRNames[] =
     return !strcmp(disasmStruct->instruction.mnemonic, "bctr");
 }
 
+- (BOOL)instructionConditionCPUModeAtTargetAddress:(DisasmStruct *)disasmStruct resultCPUMode:(uint8_t *)cpuMode {
+    return NO;
+}
+
+- (BOOL)instructionManipulatesFloat:(DisasmStruct *)disasmStruct {
+    return NO;
+}
+
 @end

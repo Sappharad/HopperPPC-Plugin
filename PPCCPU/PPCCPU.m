@@ -70,7 +70,7 @@ static void OSWriteBigInt32(void *address, uintptr_t offset, int32_t data) {
 }
 
 - (NSString *)pluginCopyright {
-    return @"©2018";
+    return @"© Paul Kratt and Jack Andersen";
 }
 
 - (NSArray *)cpuFamilies {
@@ -79,6 +79,10 @@ static void OSWriteBigInt32(void *address, uintptr_t offset, int32_t data) {
 
 - (NSString *)pluginVersion {
     return @"0.0.2";
+}
+
+- (NSString *)commandLineIdentifier {
+    return @"Gecko";
 }
 
 - (NSArray *)cpuSubFamiliesForFamily:(NSString *)family {
